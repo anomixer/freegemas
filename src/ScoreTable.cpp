@@ -21,7 +21,7 @@ ScoreTable::ScoreTable(Game * p, int score, string gameMode) : mGame(p)
 {
     options.loadResources();
 
-    int lastScore;
+    int lastScore = 0;
     if (gameMode == "stateGameTimetrial") {
         lastScore = options.getHighscoreTimetrial();
         if (lastScore < score) {
