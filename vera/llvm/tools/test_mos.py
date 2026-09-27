@@ -258,6 +258,12 @@ def test(slot):
     assert end.value('game_over') and end.endings and all(score>0 and not resolving and not match for score,resolving,match in end.endings)
     assert all(end.mem.vram[0x1FC06+i*8]==0 for i in range(64))
     end.key(ord('R'));assert not end.value('game_over') and end.value('score',4)==0
+    zero_rows=(14,17,19,21,25,17,14)
+    assert all(end.mem.vram[(55+row)*320+75+col]==10
+               for row,bits in enumerate(zero_rows) for col in range(5)
+               if bits&(16>>col)), 'reset score zero must be visible'
+    assert all(end.mem.vram[(98+row*2+py)*320+47+px]==10
+               for row in (1,2,4,5) for py in range(2) for px in range(2)), 'reset timer colon must be visible'
     assert all(end.mem.vram[0x1FC06+i*8]==8 for i in range(64))
     print(f'PASS slot {slot}: last-second move finishes before Game Over, R restores game')
     hint=Machine(slot);hint.boot_game()

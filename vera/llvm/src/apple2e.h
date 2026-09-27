@@ -1,5 +1,5 @@
 // Copyright 2026 Time-Pilot-IIvera
-// Apple IIe + VERA (VidHD-style VERA expansion card) hardware definitions.
+// Apple //e VERA (VidHD-style VERA expansion card) hardware definitions.
 //
 // This header provides a cx16.h-compatible VERA interface mapped to the
 // Apple II VERA card at Slot 2 ($C200) or Slot 4 ($C400).

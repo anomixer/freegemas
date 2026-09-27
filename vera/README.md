@@ -1,8 +1,8 @@
-# Freegemas for Apple II + VERA
+# Freegemas for Apple //e VERA
 
 English | [繁體中文](README-tw.md)
 
-An Apple IIe + VERA port of Freegemas, compiled to 65C02 code with LLVM-MOS. Graphics use a 320×240 8bpp bitmap, persistent hardware gem sprites, and a top-edge mask. A small resident ProDOS loader loads the title, game, instructions, and options as separate programs.
+An Apple //e VERA port of Freegemas, compiled to 65C02 code with LLVM-MOS. Graphics use a 320×240 8bpp bitmap, persistent hardware gem sprites, and a top-edge mask. A small resident ProDOS loader loads the title, game, instructions, and options as separate programs.
 
 The bootable 800 KB disk image is [freegemas.hdv](freegemas.hdv).
 

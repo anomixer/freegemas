@@ -572,8 +572,18 @@ static void handle_key(uint8_t key) {
         effects_clear();
         selected = 0; hint_used = 0; score = 0; game_over = 0; resolving = 0;
         time_left = 120; time_frames = 0; timer_active = 1;
-        board_generate(&board); redraw_game(); draw_score(); move_check_frames = 29;
+        /* A game-over reset restores the pristine bitmap. Invalidate the HUD
+           caches too, otherwise unchanged digits (notably the colon) are
+           incorrectly assumed to still be present on screen. Repainting all
+           score slots also clears any digits left by the previous game. */
+        displayed_count = 10;
+        time_display_valid = 0;
+        /* Paint the reset HUD immediately after restoring the scene; board
+           generation can take long enough that leaving the score blank is
+           noticeable. */
+        draw_score();
         if (!GAME_MODE) draw_time();
+        board_generate(&board); redraw_game(); move_check_frames = 29;
     } else if (key == 0x1B) {
         sound_stop();
         music_stop();

@@ -1,4 +1,4 @@
-# 開發指南：Apple II + VERA 版 Freegemas
+# 開發指南：Apple //e VERA 版 Freegemas
 
 ## 主線與原則
 

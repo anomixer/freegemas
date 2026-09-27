@@ -1,8 +1,8 @@
-# Freegemas for Apple II + VERA
+# Freegemas for Apple //e VERA
 
 [English](README.md) | 繁體中文
 
-這是 Freegemas 的 Apple IIe／VERA 移植版。遊戲以 LLVM-MOS C 編譯為 65C02 程式，使用 VERA 320×240、8bpp bitmap、常駐 gem sprites 與頂部遮罩繪圖，透過 ProDOS HDV 分段載入標題、遊戲和說明／設定畫面。
+這是 Freegemas 的 Apple //e VERA 移植版。遊戲以 LLVM-MOS C 編譯為 65C02 程式，使用 VERA 320×240、8bpp bitmap、常駐 gem sprites 與頂部遮罩繪圖，透過 ProDOS HDV 分段載入標題、遊戲和說明／設定畫面。
 
 目前可直接測試的磁碟映像是 [`freegemas.hdv`](freegemas.hdv)，容量 800 KB。
 
