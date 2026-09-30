@@ -566,6 +566,7 @@ static void handle_key(uint8_t key) {
             effects_hint(x,y);
         }
     } else if (key == 'R') {
+        uint8_t i;
         sound_stop();
         music_stop();music_restart();
         if(game_over)upload_scene();
@@ -577,6 +578,7 @@ static void handle_key(uint8_t key) {
            incorrectly assumed to still be present on screen. Repainting all
            score slots also clears any digits left by the previous game. */
         displayed_count = 10;
+        for (i = 0; i < 10; ++i) displayed_digits[i] = 0xFF;
         time_display_valid = 0;
         /* Paint the reset HUD immediately after restoring the scene; board
            generation can take long enough that leaving the score blank is

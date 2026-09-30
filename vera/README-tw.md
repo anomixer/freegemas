@@ -44,13 +44,9 @@ AppleWin 若正掛載映像，重建前先關閉模擬器，避免 HDV 被鎖住
 
 Sound 已改為原作 `select.ogg`、`fall.ogg`、`match1–3.ogg` 解碼的 VERA PCM，不再使用自創 PSG 音色。原作音量 0.3／0.25 保留；沒有額外的 Hint／Reset／Game Over 音效。Options 的 Sound／Music 分別控制音效與遊戲背景音樂。Fullscreen 固定 ON。Time Trial 為兩分鐘倒數；Endless 不顯示時間面板。
 
-遊戲背景音樂採使用者選定的純音平滑版：無 bass／鼓模擬／額外泛音，使用 PSG triangle，原生 PSG 音量提高約9dB（較第一個遊戲音樂版再提高約3dB；超出單聲道音量上限時封頂）。來源為 `generated/music_midi_pure_smooth.psg`，`tools/build_music.py` 無損打包成 `music.fgm`（9014 bytes 音符事件）及 `music_curves.bin`（9167 bytes 共用音量曲線），7398 frames、約123.3秒循環。開局前全部預載到主／輔助 RAM，播放時不讀音樂磁碟；PSG 與 PCM 音效分開，R 重播、Esc 靜音返回 Title。音樂目前只在遊戲畫面播放，Title／Options 不播放。需要128KB Apple IIe；沒有輔助 RAM 時安全停用音樂與音效。
+遊戲背景音樂採使用者選定的純音平滑版（+9dB 增益，`generated/music_pure_gained.psg`，56675 bytes、7398 frames、約 123.3 秒循環），直接以原始 `MUSIC.PSG` 格式播放，不再使用執行期 FGM2／Huffman 曲線解壓縮（同時釋放主 RAM 空間）。開局前全部預載到 Apple IIe 輔助 RAM（`$0800–$BFFF`，46 KB）與 Auxiliary Language Card Bank 1/2（`$D000–$FFFF`，16 KB），播放時零磁碟讀取；PSG 與 PCM 音效分開，R 重播、Esc 靜音返回 Title。音樂目前只在遊戲畫面播放，Title／Options 不播放。需要 128KB Apple IIe；沒有輔助 RAM 時安全停用音樂與音效。
 
-核准的 `music_pure_player_linear_listen_louder.wav` 是線性軟體播放預覽；VERA 的6-bit波形、音量量化與輸出增益不同，遊戲不是串流此 WAV，不能聲稱實機聽感／響度完全相同。遊戲採相同純音音符、平滑包絡與相對來源 PSG 約+9dB，需 AppleWin／實機試聽確認。
-
-音效不跨 VRAM／aux 邊界：match2 完整放 aux `$2C00–$757B`，match3 放 `$757C–$BFBF`；VRAM 尾端56 bytes 留空。硬體 PCM FIFO 固定4KB，起播已填滿，不能由遊戲調大；現有取樣格式約可緩衝185ms。
-
-match1／2／3 現在都只播前約0.30秒（6640 bytes），切掉長尾音；原始素材與預載配置保留。FIFO 播完後明確靜音、停採樣並清空，不保留最後樣本。select／fall 與音樂未變；三份 match 音效不再是完整原作錄音播放。
+match1／2／3 在建置階段直接截斷為前約 0.30 秒（6640 bytes），切掉長尾音；五個 PCM 音效總計降為 26912 bytes，完全塞入 VERA VRAM 的 27904 bytes 預載池，不再佔用輔助 RAM。硬體 PCM FIFO 固定 4KB，起播已填滿，不能由遊戲調大；現有取樣格式約可緩衝 185ms。FIFO 播完後明確靜音、停採樣並清空，不保留最後樣本。select／fall 未變；三份 match 音效不再是完整原作錄音播放。
 
 `LOADING GAME...` 在遊戲程式載入後會顯示20格進度條、百分比及目前資產階段；依實際 data blocks 更新，棋盤準備完成才到100%。遊戲 binary 本身載入期間仍是原本文字提示，進度條涵蓋寶石／場景／音樂／音效預載，不會加入額外等待。
 
@@ -75,7 +71,7 @@ Title、How to Play、Options、兩種遊戲模式、match／cascade／計分、
 
 Options 下方顯示兩種模式的最高分，回選單時保存至 `HISCORE.DAT`，已做 AppleWin 寫入／重開讀回測試。未回選單就強制關閉，尚未保存的紀錄會丟失；重新建置 HDV 會保留既有有效紀錄。
 
-PCM 現階段為 **原作錄音的移植原型，不是 100% 原作音訊**：16-bit mono、VERA rate 29（11062.622 Hz），原作是 44.1／48 kHz，部分音效是 stereo。五個音效共65672 bytes，開局全部預載：27848 bytes 放 VERA VRAM，其餘37824 bytes 放輔助 RAM（VRAM 池27904 bytes，尾端56 bytes 留空避免音效跨區）；播放只從記憶體補 FIFO，零音效磁碟讀取，未新增有損壓縮。只有一條 PCM stream，新音效會中斷舊音效，未實作原作重疊混音，Title／Options 導航聲尚未接入。所有 PSG 聲道供音樂使用；1 MHz 遊戲效能和實際播放仍需試聽，預載並不代表 CPU 不需補 FIFO。disk target 自動執行 `tools/build_sound.mjs`，產生 PCM 和 `llvm/build/*_pcm.wav` 試聽檔，沒有 normalize 或改音高。音訊設定持久化尚未完成。
+PCM 現階段為 **原作錄音的移植原型，不是 100% 原作音訊**：16-bit mono、VERA rate 29（11062.622 Hz），原作是 44.1／48 kHz，部分音效是 stereo。五個音效（含截斷為 6640 bytes 的 match1–3）共 26912 bytes，開局全部預載進 VERA VRAM 預載池（27904 bytes），不再使用輔助 RAM；播放只從 VRAM 補 FIFO，零音效磁碟讀取，未新增有損壓縮。只有一條 PCM stream，新音效會中斷舊音效，未實作原作重疊混音，Title／Options 導航聲尚未接入。所有 PSG 聲道供音樂使用；1 MHz 遊戲效能和實際播放仍需試聽，預載並不代表 CPU 不需補 FIFO。disk target 自動執行 `tools/build_sound.mjs`，產生 PCM 和 `llvm/build/*_pcm.wav` 試聽檔，沒有 normalize 或改音高。音訊設定持久化尚未完成。
 
 ## WAV → PSG 音樂試作
 

@@ -11,7 +11,7 @@ from collections import Counter
 import heapq
 import numpy as np
 from wav2psg import VOLUME,VERA
-MUSIC_GAIN=2.8284271247461903
+MUSIC_GAIN=3.394112549695428  # +20% gain (approx +10.6dB)
 
 def build(source):
     pos=0;shadow=np.zeros(64,dtype=np.uint8);frames=[];lut=VOLUME*4
@@ -81,15 +81,31 @@ def build(source):
 
 def pack(source):return build(source)[0]
 
+def gain_psg(source):
+    pos=0;out=bytearray();lut=VOLUME*4
+    while pos<len(source) and source[pos]!=255:
+        count=source[pos];pos+=1;out.append(count)
+        for _ in range(count):
+            reg,value=source[pos:pos+2];pos+=2
+            if reg%4==2 and value:
+                v=int(np.argmin(np.abs(lut-min(511,lut[value&63]*MUSIC_GAIN))))
+                value=(value&192)|v if v else 0
+            out.extend((reg,value))
+    out.extend(source[pos:])
+    return bytes(out)
+
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('--header',type=Path,default=VERA/'llvm/build/music_data.h')
     args=parser.parse_args()
-    data,curves,frequencies,tree=build((VERA/'generated/music_midi_pure_smooth.psg').read_bytes())
+    raw=(VERA/'generated/music_midi_pure_smooth.psg').read_bytes()
+    data,curves,frequencies,tree=build(raw)
+    gained=gain_psg(raw)
     (VERA/'generated/music.fgm').write_bytes(data)
     (VERA/'generated/music_curves.bin').write_bytes(curves)
+    (VERA/'generated/music_pure_gained.psg').write_bytes(gained)
     header=f'#define MUSIC_CURVE_SIZE {len(curves)}u\n#define MUSIC_CURVE_TAIL_SIZE {max(1,len(curves)-5632)}u\n'
     header+=f'#define MUSIC_FREQUENCIES {len(frequencies)}u\nstatic const uint16_t music_frequencies[]={{'+','.join(map(str,frequencies))+'};\n'
     header+='static const uint8_t music_curve_tree[]={'+','.join(map(str,tree))+'};\n'
     args.header.parent.mkdir(parents=True,exist_ok=True)
     if not args.header.exists() or args.header.read_text()!=header:args.header.write_text(header)
-    print(f'Music: {len(data)} event bytes, {len(curves)} lossless curve bytes; {len(frequencies)} frequencies, native gain +9dB')
+    print(f'Music: {len(gained)} raw PSG bytes ({len(data)} event bytes, {len(curves)} curve bytes); {len(frequencies)} frequencies, native gain +9dB')

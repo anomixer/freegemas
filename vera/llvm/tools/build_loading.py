@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 assets=Path(__file__).resolve().parents[2]/'generated'
-common=['game_gems_32.idx','music.fgm','music_curves.bin','select.pcm','fall.pcm','match1.pcm','match2.pcm','match3.pcm']
+common=['game_gems_32.idx','music_midi_pure_smooth.psg','select.pcm','fall.pcm','match1.pcm','match2.pcm','match3.pcm']
 # GEM.PAT is generated from the existing gem sprite-pattern asset.
 base=sum((assets.joinpath(name).stat().st_size+511)//512 for name in common)
 out=Path(sys.argv[1])

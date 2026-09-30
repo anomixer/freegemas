@@ -1,10 +1,5 @@
-/* RAMRD switches instruction fetch too. Mirror this small $0300 reader in
- * MAIN/AUX; keep ALTZP and RAMWRT off while it runs. Loader replaces MAIN
- * $0300 on the next segment launch, after music_stop. No ProDOS vectors used.
- */
         .section .text
         .global music_aux_init, music_aux_store, music_aux_page
-        .global music_read_bits
         .global music_aux_available
 music_aux_available:
         PHP
@@ -29,26 +24,7 @@ music_no_aux:
         LDA #0
         PLP
         RTS
-music_read_bits:
-        TAX
-        STZ music_bit_result
-music_bit_loop:
-        LDA music_bit_left
-        BNE music_have_byte
-        PHX
-        JSR music_read_byte
-        PLX
-        STA music_bit_byte
-        LDA #8
-        STA music_bit_left
-music_have_byte:
-        ASL music_bit_byte
-        ROL music_bit_result
-        DEC music_bit_left
-        DEX
-        BNE music_bit_loop
-        LDA music_bit_result
-        RTS
+
 music_aux_init:
         PHP
         SEI
@@ -75,46 +51,106 @@ music_reader:
         BNE music_reader+5
         STA $C002
         RTS
+
 music_aux_page:
         PHP
         SEI
         LDA music_page
+        CMP #$C0
+        BCC .read_aux_ram
+        TAX
+        CPX #$D0
+        BCS .bank1
+        LDA $C083
+        TXA
+        CLC
+        ADC #$10
+        BNE .set_high
+.bank1:
+        LDA $C08B
+        TXA
+.set_high:
+        STA .load_lc+2
+        STA $C009
+        LDY #0
+.load_lc:
+        LDA $D000,Y
+        STA music_cache,Y
+        INY
+        BNE .load_lc
+        STA $C008
+        LDA $C081
+        LDA $C081
+        LDA $C082
+        PLP
+        RTS
+.read_aux_ram:
         STA $0307
-        LDA music_target
-        STA $0309
-        LDA music_target+1
-        STA $030A
         STA $C005
-        LDA music_page
         STA $0307
-        LDA music_target
-        STA $0309
-        LDA music_target+1
-        STA $030A
         STA $C004
         JSR $0300
         PLP
         RTS
+
 music_aux_store:
         PHP
         SEI
         LDA music_source
-        STA music_load+1
+        STA .store_load+1
+        STA .store_lc_load+1
         LDA music_source+1
-        STA music_load+2
+        STA .store_load+2
+        STA .store_lc_load+2
+
         LDA music_destination_page
-        STA music_store+2
+        CMP #$C0
+        BCC .store_aux_ram
+
+        TAX
+        CPX #$D0
+        BCS .store_bank1
+        LDA $C083
+        LDA $C083
+        TXA
+        CLC
+        ADC #$10
+        BNE .set_store_high
+.store_bank1:
+        LDA $C08B
+        LDA $C08B
+        TXA
+.set_store_high:
+        STA .store_lc_write+2
+        STA $C009
         LDY #0
-        STA $C005
-music_load:
+.store_lc_loop:
+.store_lc_load:
         LDA $FFFF,Y
-music_store:
+.store_lc_write:
+        STA $D000,Y
+        INY
+        BNE .store_lc_loop
+        STA $C008
+        LDA $C081
+        LDA $C081
+        LDA $C082
+        INC music_destination_page
+        PLP
+        RTS
+
+.store_aux_ram:
+        STA .store_write+2
+        STA $C005
+        LDY #0
+.store_loop:
+.store_load:
+        LDA $FFFF,Y
+.store_write:
         STA $0800,Y
         INY
-        BNE music_load
+        BNE .store_loop
         STA $C004
         INC music_destination_page
         PLP
         RTS
-        .section .bss
-music_bit_result: .byte 0

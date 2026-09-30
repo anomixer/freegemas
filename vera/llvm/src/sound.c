@@ -8,9 +8,7 @@
 #define VRAM_PAGES 109u
 /* Short match sounds: retain ~300 ms, omit the problematic long tails. */
 #define MATCH_SHORT_BYTES 6640u
-extern uint8_t mli_status,music_aux_top,music_destination_page,music_page;
-extern uint8_t *music_source,*music_target;
-extern void music_aux_store(void),music_aux_page(void);
+extern uint8_t mli_status;
 extern void disk_read(uint16_t block,uint8_t *dest);
 extern uint8_t disk_file(const char *name,uint8_t len,uint16_t *key,uint32_t *size);
 typedef struct {uint32_t offset;uint16_t length;} Sample;
@@ -37,10 +35,6 @@ static uint8_t store_page(uint16_t page) {
         uint16_t i;uint32_t address=vram_page(page);
         VERA.control=0;VERA.address=(uint16_t)address;VERA.address_hi=(uint8_t)(VERA_INC_1|(address>>16));
         for(i=0;i<256;i++)VERA.data0=preload_page[i];
-    } else {
-        uint16_t destination=music_aux_top+page-VRAM_PAGES;
-        if(destination>=192u)return 0;
-        music_source=preload_page;music_destination_page=(uint8_t)destination;music_aux_store();
     }
     return 1;
 }
@@ -57,20 +51,10 @@ void sound_init(void) {
     static const char *const names[]={"SELECT.PCM","FALL.PCM","MATCH1.PCM","MATCH2.PCM","MATCH3.PCM"};
     uint8_t n,index,fill=0;uint16_t page=0;uint32_t total=0;
     ready=0;cached_aux=0;sound_stop();
-    if(music_aux_top<8u||music_aux_top>=192u)return;
     for(n=0;n<5;n++) {
         uint16_t key;uint32_t size,done=0;
         if(!disk_file(names[n],n==1?8u:10u,&key,&size)||size>24576u||(size&1u))return;
-        /* Keep each sample on one side of the VRAM/aux boundary. Padding is
-           storage only: it is never included in a sample's playback length. */
-        if(total<((uint32_t)VRAM_PAGES<<8) &&
-           total+size>((uint32_t)VRAM_PAGES<<8)) {
-            while(total<((uint32_t)VRAM_PAGES<<8)) {
-                preload_page[fill++]=0;++total;
-                if(!fill){if(!store_page(page++))return;}
-            }
-        }
-        if(total+size>((uint32_t)(VRAM_PAGES+192u-music_aux_top)<<8))return;
+        if(total+size>((uint32_t)VRAM_PAGES<<8))return;
         samples[n].length=(uint16_t)size;samples[n].offset=total;
         disk_read(key,buffer);if(mli_status)return;
         for(index=0;index<48;index++)blocks[index]=(uint16_t)buffer[index]|((uint16_t)buffer[256u+index]<<8);
@@ -118,12 +102,6 @@ __attribute__((noinline)) void sound_tick(void) {
         if(page<VRAM_PAGES) {
             uint32_t at=vram_page(page)+(uint8_t)cursor;
             VERA.address=(uint16_t)at;VERA.address_hi=(uint8_t)(VERA_INC_1|(at>>16));pcm_vram_copy();
-        } else {
-            uint8_t aux=(uint8_t)(music_aux_top+page-VRAM_PAGES);
-            if(aux!=cached_aux){music_page=aux;music_target=buffer;music_aux_page();cached_aux=aux;}
-            /* The FIFO can drain during the aux-to-main page copy too. */
-            if(VERA.audio.rate && (VERA.audio.control&0x40u))continue;
-            pcm_pointer=buffer+(uint8_t)cursor;pcm_copy();
         }
         sent=available-pcm_count;cursor+=sent;remaining-=sent;budget-=sent;
         if(!sent)break;

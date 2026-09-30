@@ -57,13 +57,13 @@ Options displays separate Time Trial and Endless high scores. Pending records ar
 
 Sound effects come from the original `select.ogg`, `fall.ogg`, and `match1–3.ogg`, converted to 16-bit mono VERA PCM at rate 29 (approximately 11062.622 Hz), retaining original gains of 0.3/0.25. No extra Hint, Reset, or Game Over sounds are added.
 
-All five converted effects are preloaded: 27,848 bytes in VERA VRAM and 37,824 bytes in auxiliary RAM. Effects do not cross pool boundaries; playback performs no disk reads. The CPU still refills the fixed approximately 4 KB FIFO, so preloading does not eliminate every possible processing delay. Underrun recovery restores 16-bit sample alignment before resuming playback.
+All five converted effects (with `match1–3` truncated at build time to the first 6,640 bytes / ~0.30 seconds, totaling 26,912 bytes) fit entirely into the 27,904-byte VERA VRAM preload pool. Playback performs no disk reads and uses no auxiliary RAM. The CPU still refills the fixed approximately 4 KB FIFO, so preloading does not eliminate every possible processing delay. Underrun recovery restores 16-bit sample alignment before resuming playback.
 
-Match1/2/3 play only the first approximately 0.30 seconds (6,640 bytes), as requested to remove troublesome tails. Full converted assets remain preloaded. New effects interrupt old ones; overlapping mixing and title/options navigation sounds are not implemented. This is **not a 100% reproduction of the original audio**: sample rate, channels, mixing, and match tails differ.
+New effects interrupt old ones; overlapping mixing and title/options navigation sounds are not implemented. This is **not a 100% reproduction of the original audio**: sample rate, channels, mixing, and match tails differ.
 
-Music uses the selected smooth, pure-melody PSG arrangement: triangle waves, no bass, simulated drums, or extra overtones. `tools/build_music.py` packs `generated/music_midi_pure_smooth.psg` into 9,014 bytes of note events and 9,167 bytes of shared volume curves, covering 7,398 frames (approximately 123.3 seconds). Everything is preloaded into main/auxiliary RAM; playback requires no music disk reads. Volume is approximately +9 dB relative to the source PSG, with volume values capped at hardware limits.
+Music uses the selected smooth, pure-melody PSG arrangement (+9 dB gain, `generated/music_pure_gained.psg`, 56,675 bytes across 7,398 frames, approximately 123.3 seconds) played as a direct raw `MUSIC.PSG` stream without runtime Huffman curve decompression. It is preloaded across Apple IIe auxiliary RAM (`$0800–$BFFF`, 46 KB) and Auxiliary Language Card Banks 1 and 2 (`$D000–$FFFF`, 16 KB), freeing main RAM and requiring no music disk reads during gameplay.
 
-Music and PCM effects have independent ON/OFF settings. Music plays only during gameplay; R restarts it and Esc stops audio. The approved linear WAV preview is not streamed: VERA waveform and volume quantization mean hardware playback can sound different.
+Music and PCM effects have independent ON/OFF settings. Music plays only during gameplay; R restarts it and Esc stops audio.
 
 After the game binary starts, `LOADING GAME...` shows an asset-loading progress bar for gems, scene, music, and effects. It reaches 100% when the board is ready, with `GAME START` underneath. The game binary itself loads with the text-only message.
 

@@ -11,9 +11,13 @@ for(const name of ['select','fall','match1','match2','match3']) {
     '-af',`volume=${gain},aresample=${Math.round(rate)}:filter_size=64:phase_shift=10`,
     '-ac','1','-f','s16le','pipe:1'],{maxBuffer:2**24});
   if(result.status!==0)throw new Error(result.stderr.toString());
-  fs.writeFileSync(path.join(vera,'generated',name+'.pcm'),result.stdout);
+  let outData = result.stdout;
+  if(name.startsWith('match') && outData.length > 6640) {
+    outData = outData.subarray(0, 6640);
+  }
+  fs.writeFileSync(path.join(vera,'generated',name+'.pcm'), outData);
   const wav=spawnSync('ffmpeg',['-v','error','-y','-f','s16le','-ar',String(Math.round(rate)),
-    '-ac','1','-i','pipe:0',path.join(vera,'llvm/build',name+'_pcm.wav')],{input:result.stdout});
+    '-ac','1','-i','pipe:0',path.join(vera,'llvm/build',name+'_pcm.wav')],{input: outData});
   if(wav.status!==0)throw new Error(wav.stderr.toString());
-  console.log(`${name}: ${result.stdout.length} bytes, gain ${gain}, VERA rate 29 (${rate} Hz)`);
+  console.log(`${name}: ${outData.length} bytes, gain ${gain}, VERA rate 29 (${rate} Hz)`);
 }

@@ -81,8 +81,7 @@ def main(output=None):
     files.append(put(disk,alloc,'HISCORE.DAT',0x06,0,scores))
     for name in ('select','fall','match1','match2','match3'):
         files.append(put(disk,alloc,name.upper()+'.PCM',0x06,0,(vera/'generated'/(name+'.pcm')).read_bytes()))
-    files.append(put(disk,alloc,'MUSIC.FGM',0x06,0,(vera/'generated/music.fgm').read_bytes()))
-    files.append(put(disk,alloc,'MUSIC.CRV',0x06,0,(vera/'generated/music_curves.bin').read_bytes()))
+    files.append(put(disk,alloc,'MUSIC.PSG',0x06,0,(vera/'generated/music_pure_gained.psg').read_bytes()))
     files.append(put(disk,alloc,'GEM.PAT',0x06,0,(vera/'generated/game_gems_32.idx').read_bytes()))
 
     vol=memoryview(disk)[2*BLOCK:3*BLOCK]; retained=[]
