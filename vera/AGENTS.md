@@ -110,6 +110,18 @@ AppleWin 重新建置前先卸載或關閉正在使用該 HDV 的模擬器。確
 
 2026-09-30 修復 Endless Mode 進入 Game Over 後，按 R (Reset) 不會畫出分數 `0` 的問題。原因為 `upload_scene()` 雖清除了 VRAM 畫面，但 HUD 快取 `displayed_digits` 並未失效，導致 `draw_score()` 以為畫面上仍有之前的 `0` 而略過繪製。在處理 R 鍵時將 `displayed_digits` 陣列全數標記為 `0xFF`，強迫 `draw_score()` 重繪即可解決。
 
+2026-09-30 修復 Game Over 後按 Reset 的動畫流程，使其符合原作行為：
+
+1. **`redraw_game()` 改為補牌落下動畫**：原本 `hide_sprite(0..127)` + `draw_gems()` 直接定位。現在改為只隱藏效果 slots（64–127），將所有 gem sprites 預放在螢幕上方（負 Y），再呼叫 `animate_fall()` 讓所有寶石從頂部掉落，符合原作 Reset 動畫。
+
+2. **R 鍵 Reset 呼叫 `upload_scene()` 重載場景**（螢幕維持開啟，線上重繪），再進入落下動畫。不做 VRAM 備份。
+
+   **曾嘗試但放棄的方案**：
+   - 填零清除文字帶（`erase_game_over` fill 0）→ 把棋盤底圖也清掉了，底圖不是 color 0。
+   - VRAM 雙埠備份（`GO_BACKUP_VRAM=0x16400`）→ 該位址落在 PCM pool（`0x14800`起）和游標 sprite pattern（`0x19000`）範圍內，VRAM 沒有連續 16KB 空閒區塊；寫入後游標 pattern 被 bitmap 像素覆蓋，游標變雜碼。
+   - Sprites 遮蓋文字（no-op erase）→ gem sprite 四周有透明邊緣（24px artwork 在 32px frame），GAME OVER 文字從縫隙透出，不可行。
+   - `VERA.display.video=0` 黑屏後 `upload_scene()` 再開回 → 可行但不必要，用戶反映直接線上重載即可。
+
 2026-09-27 遊戲HUD亦改sentence case：Score／Time left／Show hint／Reset game／Exit。只修改素材generator的標籤，位置、字級、按鈕置中、emoticons及hitboxes不變；Time Trial／Endless場景及palette同步重建。原作logo、分數／時間數字、Game Over文字及開機文字不在此變更範圍。
 
 2026-09-27 選單文字改 sentence case：Title 使用 Timetrial mode／Endless mode／How to play?／Options／Exit；How to Play 標題、說明段落及返回提示改句首大寫；Options 使用 Music／Sound／Fullscreen: On／Back／High score，runtime On／Off 與 Timetrial／Endless 高分標籤同步小寫。`build_assets.mjs`補齊5×7小寫glyph，原字級、置中與hitboxes不變；重新量化共用title palette後需一起更新Title／Howto／Options場景及title gems。遊戲HUD、原作logo及開機文字保持原樣。兩slot高分置中／右對齊回歸通過。

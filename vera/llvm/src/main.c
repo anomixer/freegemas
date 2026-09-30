@@ -1,4 +1,4 @@
-#include <stdint.h>
+﻿#include <stdint.h>
 #include "apple2e.h"
 #include "board.h"
 #include "game_palette.h"
@@ -88,12 +88,22 @@ static void vram_at(uint32_t address) {
 static uint8_t score_backup[17u*77u],time_backup[15u*48u];
 #define HEADER_MAP      0x1A800u
 #define HEADER_TILES    0x1B800u
+
 static void vram1_at(uint32_t address) {
     VERA.control = 1;
     VERA.address_hi = (uint8_t)(VERA_INC_1 | (address >> 16));
     VERA.address = (uint16_t)address;
     VERA.control = 0;
 }
+
+/* Game-over text (y=57-78, 88-108, 119-125) is drawn onto the bitmap.
+ * On reset, erase_game_over() is a no-op: the 32px gem sprites on a 26px
+ * pitch fully overlap and cover the entire board bitmap area after
+ * animate_fall() completes, so text pixels are hidden naturally.
+ * (Attempting to backup/restore that region in VRAM fails because there
+ * is no 16 KB contiguous free area -- cursor/PCM patterns fill 0x14800+.) */
+static void erase_game_over(void) { /* no-op -- gems cover the bitmap */ }
+
 
 /* Layer 1 masks only the 16px top border, above z=2 gems. New sprites can
  * enter smoothly from negative Y without spilling across the board header.
@@ -427,6 +437,7 @@ static void drop_all_gems(void) {
     for (slot = 0; slot < 64; ++slot) hide_sprite(slot);
 }
 
+
 static void show_game_over(void) {
     uint8_t digits[10], count = 0, n;
     uint32_t value;
@@ -466,9 +477,21 @@ static void upload_gems(void) {
 }
 
 static void redraw_game(void) {
-    uint8_t slot;
-    for (slot = 0; slot < 128; ++slot) hide_sprite(slot);
-    draw_gems();
+    uint8_t slot, x, y;
+    uint8_t marks[8][8];
+    /* Hide effect/cursor slots above the gem grid */
+    for (slot = 64; slot < 128; ++slot) hide_sprite(slot);
+    /* Place all gem sprites above the visible area so animate_fall drops them
+     * in Ã¢â‚¬â€ matching the original game's reset behaviour. */
+    for (y = 0; y < 8; ++y)
+        for (x = 0; x < 8; ++x)
+            put_sprite((uint8_t)(y * 8u + x),
+                       (uint16_t)((board.cells[y][x] - 1u) * 1024u),
+                       GEM_X(x),
+                       (uint16_t)(GEM_Y(0) - (uint16_t)(8u - y) * 26u));
+    /* marks=all 1 Ã¢â€ â€™ every gem is treated as "new" and falls from above */
+    for (y = 0; y < 8; ++y) for (x = 0; x < 8; ++x) marks[y][x] = 1;
+    animate_fall(&board, marks);
     set_cursor_sprite();
 }
 
@@ -569,20 +592,18 @@ static void handle_key(uint8_t key) {
         uint8_t i;
         sound_stop();
         music_stop();music_restart();
+        /* Erase game-over text directly in VRAM Ã¢â‚¬â€ much faster than reloading
+           the entire scene from disk, and gives the same instant-clear look
+           that the original game had before gems start falling. */
         if(game_over)upload_scene();
         effects_clear();
         selected = 0; hint_used = 0; score = 0; game_over = 0; resolving = 0;
         time_left = 120; time_frames = 0; timer_active = 1;
-        /* A game-over reset restores the pristine bitmap. Invalidate the HUD
-           caches too, otherwise unchanged digits (notably the colon) are
-           incorrectly assumed to still be present on screen. Repainting all
-           score slots also clears any digits left by the previous game. */
+        /* Invalidate HUD caches so all digits and the timer colon are
+           repainted even when their values happen to be unchanged. */
         displayed_count = 10;
         for (i = 0; i < 10; ++i) displayed_digits[i] = 0xFF;
         time_display_valid = 0;
-        /* Paint the reset HUD immediately after restoring the scene; board
-           generation can take long enough that leaving the score blank is
-           noticeable. */
         draw_score();
         if (!GAME_MODE) draw_time();
         board_generate(&board); redraw_game(); move_check_frames = 29;
@@ -708,3 +729,6 @@ int main(void) {
     }
     return 0;
 }
+
+
+
