@@ -58,30 +58,21 @@ music_aux_page:
         LDA music_page
         CMP #$C0
         BCC .read_aux_ram
-        TAX
-        CPX #$D0
-        BCS .bank1
-        LDA $C083
-        TXA
         CLC
-        ADC #$10
-        BNE .set_high
-.bank1:
-        LDA $C08B
-        TXA
-.set_high:
+        ADC #$10              ; map $C0..$FF directly to $D0..$FF (Bank 1)
         STA .load_lc+2
-        STA $C009
+        LDA $C08B             ; Aux LC Bank 1 Read RAM
+        STA $C009             ; Enable ALTZP / Aux LC
         LDY #0
 .load_lc:
         LDA $D000,Y
         STA music_cache,Y
         INY
         BNE .load_lc
-        STA $C008
+        STA $C008             ; Restore Main ZP
         LDA $C081
         LDA $C081
-        LDA $C082
+        LDA $C082             ; Restore Bank 2 ROM read / write-protect
         PLP
         RTS
 .read_aux_ram:
@@ -107,22 +98,12 @@ music_aux_store:
         CMP #$C0
         BCC .store_aux_ram
 
-        TAX
-        CPX #$D0
-        BCS .store_bank1
-        LDA $C083
-        LDA $C083
-        TXA
         CLC
-        ADC #$10
-        BNE .set_store_high
-.store_bank1:
-        LDA $C08B
-        LDA $C08B
-        TXA
-.set_store_high:
+        ADC #$10              ; map $C0..$FF directly to $D0..$FF (Bank 1)
         STA .store_lc_write+2
-        STA $C009
+        LDA $C08B             ; Aux LC Bank 1 Read & Write RAM
+        LDA $C08B
+        STA $C009             ; Enable ALTZP / Aux LC
         LDY #0
 .store_lc_loop:
 .store_lc_load:
@@ -131,10 +112,10 @@ music_aux_store:
         STA $D000,Y
         INY
         BNE .store_lc_loop
-        STA $C008
+        STA $C008             ; Restore Main ZP
         LDA $C081
         LDA $C081
-        LDA $C082
+        LDA $C082             ; Restore Bank 2 ROM read / write-protect
         INC music_destination_page
         PLP
         RTS

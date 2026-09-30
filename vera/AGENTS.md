@@ -17,7 +17,7 @@
 - `llvm/src/main.c`、`board.c`、`board.h`：遊戲、棋盤、計分、動畫與畫面更新。
 - `llvm/src/effects.c`／`effects.h`：游標、選取框、消除星芒和每組 match 得分浮字。限 4 組同時浮字、32 顆星芒；超量以 ring pool 取代最舊特效，不影響實際計分。
 - `llvm/src/sound.c`／`sound.h`／`pcm_feed.S`：五個原作 PCM 音效（match1–3 已在建置時裁切為前 6640 bytes，總計 26912 bytes）完整預載到 VERA VRAM；播放不讀磁碟也不占 Aux RAM，以 port1 讀取補 FIFO，保存 port1 狀態，不動 PSG。
-- `llvm/src/music.c`／`music.h`／`music_aux.S`：整首純音平滑 +9dB PSG（`music_pure_gained.psg`，56675 bytes）預載到 Aux RAM（`$0800–$BFFF`）與 Aux Language Card Bank 1/2（`$D000–$FFFF`），以 VSYNC 直接解析 raw PSG stream；16 聲道供音樂，保留 VERA port0 的位址／stride／control。
+- `llvm/src/music.c`／`music.h`／`music_aux.S`：整首純音平滑 +9dB PSG（`music_pure_gained.psg`，56675 bytes）預載到 Aux RAM（`$0800–$BFFF`，46 KB）與 Aux Language Card Bank 1（連續 `$D000–$FFFF`，12 KB，實際使用 9.5 KB），以 VSYNC 直接解析 raw PSG stream；16 聲道供音樂，保留 VERA port0 的位址／stride／control。
 - `llvm/src/hiscore.h`：跨 segment 的兩模式高分與 dirty flag。
 - `tools/build_assets.mjs`：以 `media/` 建立遊戲／標題 palette、RLE 場景和 sprites。
 - `llvm/tools/build_hdv.py`：把程式與 RLE 場景打包至 800 KB ProDOS HDV，並建立跨 directory block 的檔案目錄。
@@ -103,10 +103,9 @@ AppleWin 重新建置前先卸載或關閉正在使用該 HDV 的模擬器。確
 1. `build_sound.mjs` 將 `match1.pcm`、`match2.pcm`、`match3.pcm` 直接在建置階段截斷為 6640 bytes（約 0.30 秒），五個 PCM 總計由 65672 bytes 降至 26912 bytes，完全塞入 VERA VRAM 的 109 頁預載池（27904 bytes），徹底釋放 Aux RAM，並移除 `sound.c` 的 Aux RAM 讀取邏輯與 `MUSIC.CRV`。
 2. `music.c` 與 `music_aux.S` 改為直接載入並播放 `MUSIC.PSG`（由 `music_midi_pure_smooth.psg` 經 `build_music.py` 套用 +9dB 增益產生的 `generated/music_pure_gained.psg`，56675 bytes，約 222 pages），不再使用 FGM2／Huffman 曲線壓縮（同時釋放 Main RAM 的曲線表空間）：
    - Logical pages `$08..$BF`（184 pages，46 KB）存入 Aux 48K RAM `$0800..$BFFF`。讀取時必須透過 `music_aux_init` 鏡像在 Main/Aux `$0300` 的 18-byte `music_reader` 切換 `$C003`/`$C002`（`RAMRD` 會連同 CPU instruction fetch 一起切換，不可直接在 Main RAM `.text` 內開啟 `$C003`）。
-   - Logical pages `$C0..$CF`（16 pages，4 KB）透過 `ALTZP`（`$C009`）映射至 Aux Language Card Bank 2 `$D000..$DFFF`（`$C083`）。
-   - Logical pages `$D0..$FF`（最多 48 pages，12 KB）透過 `ALTZP`（`$C009`）映射至 Aux Language Card Bank 1 `$D000..$FFFF`（`$C08B`）。
+   - Logical pages `$C0..$FF`（最多 64 pages / 16 KB，實際使用 38 pages / 9.5 KB）透過 `ALTZP`（`$C009`）直接連續線性映射至 Aux Language Card Bank 1 `$D000..$FFFF`（`$C08B`），徹底摒除 Bank 2 切換與位址折疊，整段 46KB 之後資料連續平坦存取。
    - 存取 Aux LC 期間禁止在 `STA $C009` 與 `STA $C008` 之間使用 `PHA`/`PLA`（因為 `ALTZP` 會連硬體 Stack `$0100` 一起切到 Aux），且結束後必須執行 `LDA $C081; LDA $C081; LDA $C082` 還原全域 LC 狀態為 Bank 2 + ROM read / write-protect，避免 ProDOS 與 Mouse firmware 崩潰。
-   - 修復 1:38（第 5916 frame / page `$C0`）音樂切斷問題：原本在搬移 loop 內每 byte 切換一次 `ALTZP` 導致 Aux LC 寫入狀態錯亂，且讀取時多讀一次 `$C083` 變成讀寫模式；修正為搬移 256 bytes 期間僅在外層單次切換 `ALTZP`，確保 46KB 之後的資料正確寫入與讀出，曲子可完整播完 2 分 03 秒。
+   - 修復 1:38（第 5916 frame / page `$C0`）音樂切斷問題：原本在搬移 loop 內每 byte 切換一次 `ALTZP` 導致 Aux LC 寫入狀態錯亂，且讀取時多讀一次 `$C083` 變成讀寫模式；修正為搬移 256 bytes 期間僅在外層單次切換 `ALTZP` 並改用連續 Bank 1，確保 46KB 之後的資料正確寫入與讀出，曲子可完整播完 2 分 03 秒。
 3. `build_music.py` 音量再調增 20%（`MUSIC_GAIN` = 3.394，約 +10.6 dB），提升遊戲內 PSG 音樂聽感。
 
 2026-09-30 修復 Endless Mode 進入 Game Over 後，按 R (Reset) 不會畫出分數 `0` 的問題。原因為 `upload_scene()` 雖清除了 VRAM 畫面，但 HUD 快取 `displayed_digits` 並未失效，導致 `draw_score()` 以為畫面上仍有之前的 `0` 而略過繪製。在處理 R 鍵時將 `displayed_digits` 陣列全數標記為 `0xFF`，強迫 `draw_score()` 重繪即可解決。

@@ -44,7 +44,7 @@ AppleWin 若正掛載映像，重建前先關閉模擬器，避免 HDV 被鎖住
 
 Sound 已改為原作 `select.ogg`、`fall.ogg`、`match1–3.ogg` 解碼的 VERA PCM，不再使用自創 PSG 音色。原作音量 0.3／0.25 保留；沒有額外的 Hint／Reset／Game Over 音效。Options 的 Sound／Music 分別控制音效與遊戲背景音樂。Fullscreen 固定 ON。Time Trial 為兩分鐘倒數；Endless 不顯示時間面板。
 
-遊戲背景音樂採使用者選定的純音平滑版（+9dB 增益，`generated/music_pure_gained.psg`，56675 bytes、7398 frames、約 123.3 秒循環），直接以原始 `MUSIC.PSG` 格式播放，不再使用執行期 FGM2／Huffman 曲線解壓縮（同時釋放主 RAM 空間）。開局前全部預載到 Apple IIe 輔助 RAM（`$0800–$BFFF`，46 KB）與 Auxiliary Language Card Bank 1/2（`$D000–$FFFF`，16 KB），播放時零磁碟讀取；PSG 與 PCM 音效分開，R 重播、Esc 靜音返回 Title。音樂目前只在遊戲畫面播放，Title／Options 不播放。需要 128KB Apple IIe；沒有輔助 RAM 時安全停用音樂與音效。
+遊戲背景音樂採使用者選定的純音平滑版（+9dB 增益，`generated/music_pure_gained.psg`，56675 bytes、7398 frames、約 123.3 秒循環），直接以原始 `MUSIC.PSG` 格式播放，不再使用執行期 FGM2／Huffman 曲線解壓縮（同時釋放主 RAM 空間）。開局前全部預載到 Apple IIe 輔助 RAM（`$0800–$BFFF`，46 KB）與 Auxiliary Language Card Bank 1（連續 `$D000–$FFFF`，12 KB），播放時零磁碟讀取；PSG 與 PCM 音效分開，R 重播、Esc 靜音返回 Title。音樂目前只在遊戲畫面播放，Title／Options 不播放。需要 128KB Apple IIe；沒有輔助 RAM 時安全停用音樂與音效。
 
 match1／2／3 在建置階段直接截斷為前約 0.30 秒（6640 bytes），切掉長尾音；五個 PCM 音效總計降為 26912 bytes，完全塞入 VERA VRAM 的 27904 bytes 預載池，不再佔用輔助 RAM。硬體 PCM FIFO 固定 4KB，起播已填滿，不能由遊戲調大；現有取樣格式約可緩衝 185ms。FIFO 播完後明確靜音、停採樣並清空，不保留最後樣本。select／fall 未變；三份 match 音效不再是完整原作錄音播放。
 

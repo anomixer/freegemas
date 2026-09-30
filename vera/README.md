@@ -61,7 +61,7 @@ All five converted effects (with `match1–3` truncated at build time to the fir
 
 New effects interrupt old ones; overlapping mixing and title/options navigation sounds are not implemented. This is **not a 100% reproduction of the original audio**: sample rate, channels, mixing, and match tails differ.
 
-Music uses the selected smooth, pure-melody PSG arrangement (+9 dB gain, `generated/music_pure_gained.psg`, 56,675 bytes across 7,398 frames, approximately 123.3 seconds) played as a direct raw `MUSIC.PSG` stream without runtime Huffman curve decompression. It is preloaded across Apple IIe auxiliary RAM (`$0800–$BFFF`, 46 KB) and Auxiliary Language Card Banks 1 and 2 (`$D000–$FFFF`, 16 KB), freeing main RAM and requiring no music disk reads during gameplay.
+Music uses the selected smooth, pure-melody PSG arrangement (+9 dB gain, `generated/music_pure_gained.psg`, 56,675 bytes across 7,398 frames, approximately 123.3 seconds) played as a direct raw `MUSIC.PSG` stream without runtime Huffman curve decompression. It is preloaded across Apple IIe auxiliary RAM (`$0800–$BFFF`, 46 KB) and Auxiliary Language Card Bank 1 (`$D000–$FFFF`, 12 KB continuous), freeing main RAM and requiring no music disk reads during gameplay.
 
 Music and PCM effects have independent ON/OFF settings. Music plays only during gameplay; R restarts it and Esc stops audio.
 
