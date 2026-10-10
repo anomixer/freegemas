@@ -15,29 +15,33 @@ clear_text_loop:
         .section .rodata
         .global trampoline_src, trampoline_src_end
 trampoline_src:
-        LDA #3
+; $3C0 READ param: refnum, dest, request count, transfer count
+; $3D0 CLOSE param: refnum; $3C8 is the number of 512-byte chunks.
+        LDA #4
         STA $3C0
         LDX #0
-loop:   LDA $B800,X
-        STA $3C4
-        LDA $B900,X
-        STA $3C5
-        LDA #0
-        STA $3C2
-        TXA
-        ASL A
-        CLC
-        ADC #$30
-        STA $3C3
+load_loop:
         STX $3C9
         JSR $BF00
-        .byte $80
+        .byte $CA               ; READ opened ProDOS file
         .word $3C0
         BCS fail
         LDX $3C9
+        ; Each READ fills 512 bytes; advance the destination by two pages.
+        ; Without this, every iteration overwrites $3000 and the image never
+        ; reaches its actual entry code.
+        CLC
+        LDA $3C3
+        ADC #2
+        STA $3C3
         INX
-        CPX $3C8
-        BCC loop
+        CPX $03C8
+        BCC load_loop
+        LDA #1
+        STA $3D0
+        JSR $BF00
+        .byte $CC               ; CLOSE
+        .word $3D0
         ; Segment calls never return. Discard their accumulated hardware
         ; return addresses as well as reinitializing the C soft stack.
         LDX #$FF

@@ -16,7 +16,6 @@ uint8_t *music_source;
 uint8_t music_destination_page;
 
 static uint8_t *const disk_buffer=(uint8_t *)0x0C00;
-static uint16_t disk_blocks[126];
 static uint16_t music_position;
 static uint32_t music_size;
 static uint8_t music_ready,music_on,cache_page;
@@ -39,23 +38,16 @@ static uint8_t event_byte(void) {
 __attribute__((noinline)) void music_restart(void) {
     music_position=0;cache_page=255;
 }
-static uint8_t index_file(uint16_t key, uint8_t count) {
-    uint8_t i;disk_read(key,disk_buffer);if(mli_status)return 0;
-    for(i=0;i<count;i++)disk_blocks[i]=(uint16_t)disk_buffer[i]|((uint16_t)disk_buffer[256u+i]<<8);
-    return 1;
-}
-
 void music_init(void) {
     uint16_t key;uint32_t size;uint8_t n,pages;
     music_ready=music_on=music_aux_top=0;
     if(!music_aux_available())return;
     if(!disk_file("MUSIC.PSG",9,&key,&size)||size<3||size>63488u)return;
     pages=(uint8_t)((size+511u)>>9);
-    if(!index_file(key, pages))return;
     music_size=size;
     music_aux_init();music_destination_page=8;
     for(n=0;n<pages;n++) {
-        disk_read(disk_blocks[n],disk_buffer);if(mli_status)return;
+        disk_read(n,disk_buffer);if(mli_status)return;
         music_source=disk_buffer;music_aux_store();
         music_source=disk_buffer+256;music_aux_store();
         loading_step();

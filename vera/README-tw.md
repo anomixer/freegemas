@@ -30,6 +30,12 @@ AppleWin.exe -s2 vera -s7 hdc -h1 C:\dev\freegemas\vera\freegemas.hdv
 
 AppleWin 若正掛載映像，重建前先關閉模擬器，避免 HDV 被鎖住。
 
+## 以 ProDOS 檔案安裝
+
+HDV volume name 為 `FREEGEMAS`。若要安裝到其他 ProDOS volume 或子目錄，請將 HDV 內所有檔案複製到目標位置，唯獨不複製 `PRODOS`。請保留 `FREEGEMAS` marker 檔，將 ProDOS prefix 設為該位置，再執行 `FREEGEM.SYSTEM`。Loader 和遊戲會依檔名開啟程式、場景、圖樣、音樂、音效及 `HISCORE.DAT`，不依賴原 HDV 的 block 配置。新產生的檔案目錄項目會寫入本機建置日期與時間，格式符合 ProDOS。
+
+已用 AppleWin 確認可直接由 HDV 開機、進入遊戲並返回 Title。使用者也確認檔案層級安裝到 VeraSD 後可正常執行，且 `HISCORE.DAT` 能持久寫入。
+
 啟動時先偵測 slot 2／4 的 VERA；兩者皆無卡時仍完整顯示作者、網址、滑鼠偵測及操作說明。STATUS 顯示 `VERA NOT DETECTED`，下方顯示 `STOPPED: VERA REQUIRED IN SLOT 2 OR 4` 並停止；按鍵也不會進入 Title 或遊戲。
 
 ## 操作

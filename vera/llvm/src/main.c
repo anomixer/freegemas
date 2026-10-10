@@ -62,8 +62,11 @@ static uint8_t mouse_last_y;
 static void timer_frame(void);
 static void show_game_over(void);
 
-extern uint8_t mli_unit, mli_buf_lo, mli_buf_hi, mli_blk_lo, mli_blk_hi, mli_status;
-extern void mli_read_block(void);
+extern uint8_t mli_status;
+extern uint8_t mli_open_params[], mli_close_params[], mli_read_params[];
+extern uint8_t mli_mark_params[], mli_prefix_params[], mli_eof_params[];
+extern void mli_open(void), mli_close(void), mli_read(void);
+extern void mli_set_mark(void), mli_get_prefix(void), mli_get_eof(void);
 
 #define GEM_X(c) ((uint16_t)(93u + (uint16_t)(c) * 26u))
 #define GEM_Y(r) ((uint16_t)(13u + (uint16_t)(r) * 26u))
@@ -217,50 +220,94 @@ static void palette(void) {
     vram_at(0x1FA16u); VERA.data0 = 0xFF; VERA.data0 = 0x0F; /* index 11: game-over white */
 }
 
-void disk_read(uint16_t block, uint8_t *dest) {
-    mli_unit = *(volatile uint8_t *)0xBF30;
-    mli_buf_lo = (uint8_t)(uint16_t)dest; mli_buf_hi = (uint8_t)((uint16_t)dest >> 8);
-    mli_blk_lo = (uint8_t)block; mli_blk_hi = (uint8_t)(block >> 8);
-    mli_read_block();
+static uint8_t *const disk_path = (uint8_t *)0x0B00;
+static uint8_t disk_ref, disk_open;
+static uint32_t disk_size;
+
+static void disk_close_file(void) {
+    if (!disk_open) return;
+    mli_close_params[1] = disk_ref;
+    mli_close();
+    disk_open = 0;
 }
+void disk_close(void) { disk_close_file(); }
 
 uint8_t disk_file(const char *name, uint8_t len, uint16_t *key, uint32_t *size) {
-    uint8_t *dir = (uint8_t *)0x0C00;
-    uint16_t block = 2;
-    while (block) {
-        uint8_t i, j;
-        disk_read(block, dir);
-        if (mli_status) return 0;
-        for (i = block == 2 ? 1 : 0; i < 13; ++i) {
-            uint8_t *e = dir + 4u + (uint16_t)i * 39u;
-            if ((e[0] & 15u) != len) continue;
-            for (j = 0; j < len; ++j) if ((e[1 + j] & 0x7Fu) != (uint8_t)name[j]) break;
-            if (j == len) {
-                *key = (uint16_t)e[0x11] | ((uint16_t)e[0x12] << 8);
-                *size = (uint32_t)e[0x15] | ((uint32_t)e[0x16] << 8) | ((uint32_t)e[0x17] << 16);
-                return 1;
-            }
-        }
-        block = (uint16_t)dir[2] | ((uint16_t)dir[3] << 8);
+    uint8_t i, n;
+    uintptr_t p;
+    disk_close_file();
+    p = (uintptr_t)disk_path;
+    mli_prefix_params[1] = (uint8_t)p;
+    mli_prefix_params[2] = (uint8_t)(p >> 8);
+    mli_get_prefix();
+    if (mli_status || disk_path[0] > 63) return 0;
+    n = disk_path[0];
+    if (n && disk_path[n] != '/') {
+        if (n >= 63) return 0;
+        disk_path[++n] = '/';
     }
-    return 0;
+    for (i = 0; i < len; ++i) {
+        if (n >= 64) return 0;
+        disk_path[++n] = (uint8_t)name[i];
+    }
+    disk_path[0] = n;
+    p = (uintptr_t)disk_path;
+    mli_open_params[1] = (uint8_t)p;
+    mli_open_params[2] = (uint8_t)(p >> 8);
+    mli_open_params[3] = 0x00;
+    mli_open_params[4] = 0xB8;
+    mli_open_params[5] = 0;
+    mli_open();
+    if (mli_status) return 0;
+    disk_ref = mli_open_params[5];
+    disk_open = 1;
+    mli_eof_params[1] = disk_ref;
+    mli_get_eof();
+    if (mli_status) { disk_close_file(); return 0; }
+    disk_size = (uint32_t)mli_eof_params[2] | ((uint32_t)mli_eof_params[3] << 8)
+        | ((uint32_t)mli_eof_params[4] << 16);
+    *key = 0; /* disk_read now addresses 512-byte offsets within this open file. */
+    *size = disk_size;
+    return 1;
+}
+
+void disk_read(uint16_t block, uint8_t *dest) {
+    uint32_t offset = (uint32_t)block << 9;
+    uint16_t count;
+    uintptr_t p;
+    if (!disk_open || offset >= disk_size) { mli_status = 0x4C; return; }
+    count = disk_size - offset > 512u ? 512u : (uint16_t)(disk_size - offset);
+    mli_mark_params[1] = disk_ref;
+    mli_mark_params[2] = (uint8_t)offset;
+    mli_mark_params[3] = (uint8_t)(offset >> 8);
+    mli_mark_params[4] = (uint8_t)(offset >> 16);
+    mli_set_mark();
+    if (mli_status) return;
+    p = (uintptr_t)dest;
+    mli_read_params[1] = disk_ref;
+    mli_read_params[2] = (uint8_t)p;
+    mli_read_params[3] = (uint8_t)(p >> 8);
+    mli_read_params[4] = (uint8_t)count;
+    mli_read_params[5] = (uint8_t)(count >> 8);
+    mli_read_params[6] = mli_read_params[7] = 0;
+    mli_read();
+    if (mli_status == 0 && (mli_read_params[6] != (uint8_t)count
+        || mli_read_params[7] != (uint8_t)(count >> 8))) mli_status = 0x4C;
 }
 
 static void upload_scene(void) {
-    uint8_t *buf = (uint8_t *)0x0C00, *idx = (uint8_t *)0xB800;
-    uint16_t key;
+    /* $B800 is the ProDOS OPEN I/O buffer; payload data uses the separate
+       staging page shared with startup audio loading. */
+    uint8_t *buf = (uint8_t *)0x0C00;
     uint32_t size, done = 0;
-    uint8_t entry = 0, want_count = 1, count = 0, first = 1, raw = 0;
-    if (!disk_file(GAME_MODE ? "ENDLESS.RLE" : "GAME.RLE", GAME_MODE ? 11u : 8u, &key, &size)) return;
-    disk_read(key, buf); /* MLI cannot write directly to the $B800 staging window. */
-    if (mli_status) return;
-    { uint16_t q; for (q = 0; q < 512; ++q) idx[q] = buf[q]; }
+    uint16_t block = 0;
+    uint8_t want_count = 1, count = 0, first = 1, raw = 0;
+    if (!disk_file(GAME_MODE ? "ENDLESS.RLE" : "GAME.RLE", GAME_MODE ? 11u : 8u, &block, &size)) return;
     vram_at(0);
     while (done < size) {
-        uint16_t block = (uint16_t)idx[entry] | ((uint16_t)idx[256u + entry] << 8);
         uint16_t n = size - done > 512u ? 512u : (uint16_t)(size - done);
         uint16_t p;
-        disk_read(block, buf); if (mli_status) return;
+        disk_read(block++, buf); if (mli_status) return;
         for (p = 0; p < n; ++p) {
             uint8_t b = buf[p], q;
             if (raw) VERA.data0 = b;
@@ -271,7 +318,7 @@ static void upload_scene(void) {
                 first = 0; want_count = 1;
             }
         }
-        done += n; ++entry;
+        done += n;
         loading_step();
     }
 }
@@ -463,14 +510,12 @@ static void show_game_over(void) {
 }
 
 static void upload_gems(void) {
-    uint8_t *buf=(uint8_t *)0x0C00,*idx=(uint8_t *)0xB800,n;
-    uint16_t key,i;uint32_t size;
+    uint8_t *buf=(uint8_t *)0x0C00,n;
+    uint16_t i,key;uint32_t size;
     if(!disk_file("GEM.PAT",7,&key,&size)||size!=7168u)return;
-    disk_read(key,buf);if(mli_status)return;
-    for(i=0;i<512;i++)idx[i]=buf[i];
     vram_at(SPRITE_PATTERNS);
     for(n=0;n<14;n++){
-        disk_read((uint16_t)idx[n]|((uint16_t)idx[256u+n]<<8),buf);if(mli_status)return;
+        disk_read(n,buf);if(mli_status)return;
         loading_step();
         for(i=0;i<512;i++)VERA.data0=buf[i];
     }
@@ -610,6 +655,9 @@ static void handle_key(uint8_t key) {
     } else if (key == 0x1B) {
         sound_stop();
         music_stop();
+        /* Release the final open ProDOS file before the resident loader
+           opens its marker and score files with the same I/O buffer. */
+        disk_close();
         NEXT_IMAGE = 0; ((void (*)(void))0x2000)();
     }
 }

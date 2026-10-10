@@ -1,10 +1,22 @@
 #!/usr/bin/env python3
 """Create a bootable 800 KB ProDOS HDV for the segmented Freegemas port."""
+from datetime import datetime
 from pathlib import Path
 
 BLOCK = 512
 RESERVE = 100                 # ProDOS/CLOCK.SYSTEM from the known-good base HDV
 KEEP = {"PRODOS", "CLOCK.SYSTEM"}
+BUILD_TIME = datetime.now()
+
+def prodos_datetime(value):
+    year = value.year - (2000 if value.year >= 2000 else 1900)
+    if not 0 <= year <= 99:
+        raise ValueError(f"ProDOS timestamps cannot represent year {value.year}")
+    date = ((year & 0x7F) << 9) | ((value.month & 15) << 5) | (value.day & 31)
+    time = ((value.hour & 31) << 8) | (value.minute & 63)
+    return bytes((date & 255, date >> 8, time & 255, time >> 8))
+
+BUILD_PRODOS_DATETIME = prodos_datetime(BUILD_TIME)
 
 def saved_scores(disk):
     """Keep user records across rebuilds even when their data block moves."""
@@ -53,7 +65,9 @@ def entry(vol, offset, f):
     vol[offset+0x10]=f['typ']; vol[offset+0x11]=f['key']&255; vol[offset+0x12]=f['key']>>8
     vol[offset+0x13]=f['total']&255; vol[offset+0x14]=f['total']>>8
     vol[offset+0x15]=f['eof']&255; vol[offset+0x16]=(f['eof']>>8)&255; vol[offset+0x17]=(f['eof']>>16)&255
+    vol[offset+0x18:offset+0x1C]=BUILD_PRODOS_DATETIME
     vol[offset+0x1e]=0xc3; vol[offset+0x1f]=f['aux']&255; vol[offset+0x20]=f['aux']>>8; vol[offset+0x25]=2
+    vol[offset+0x21:offset+0x25]=BUILD_PRODOS_DATETIME
 
 def main(output=None):
     here=Path(__file__).resolve().parent; llvm=here.parent; vera=llvm.parent; root=vera.parent
@@ -69,6 +83,7 @@ def main(output=None):
     # ProDOS names are limited to 15 characters; the prior 16-character
     # spelling silently produced a malformed directory entry.
     files=[put(disk,alloc,'FREEGEM.SYSTEM',0xff,0x2000,system)]
+    files.append(put(disk,alloc,'FREEGEMAS',0x06,0,b'F'))
     for name, file in [('TITLE.BIN','title.bin'),('TITLE4.BIN','title4.bin'),('GAME.BIN','freegemas.bin'),('GAME4.BIN','freegemas4.bin')]:
         data,address=raw_bin(llvm/'build'/file); files.append(put(disk,alloc,name,0x06,address,data))
     for name,file in [('HOWTO.BIN','howto.bin'),('HOWTO4.BIN','howto4.bin'),('OPTION.BIN','option.bin'),('OPTION4.BIN','option4.bin'),('INTRO.BIN','intro.bin'),('INTRO4.BIN','intro4.bin')]:
@@ -85,6 +100,9 @@ def main(output=None):
     files.append(put(disk,alloc,'GEM.PAT',0x06,0,(vera/'generated/game_gems_32.idx').read_bytes()))
 
     vol=memoryview(disk)[2*BLOCK:3*BLOCK]; retained=[]
+    volume_name=b'FREEGEMAS'
+    vol[4]=0xF0|len(volume_name)
+    vol[5:20]=volume_name.ljust(15,b'\0')
     for i in range(1,13):
         off=4+i*39
         if not vol[off]: continue

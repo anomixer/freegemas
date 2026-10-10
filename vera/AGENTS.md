@@ -21,6 +21,9 @@
 - `llvm/src/hiscore.h`：跨 segment 的兩模式高分與 dirty flag。
 - `tools/build_assets.mjs`：以 `media/` 建立遊戲／標題 palette、RLE 場景和 sprites。
 - `llvm/tools/build_hdv.py`：把程式與 RLE 場景打包至 800 KB ProDOS HDV，並建立跨 directory block 的檔案目錄。
+- `llvm/src/loader.c`、`main.c`、`sound.c`、`music.c`：ProDOS 檔案層級載入；以 GET_PREFIX 組合遊戲目錄路徑，再透過 OPEN／GET_EOF／SET_MARK／READ／WRITE 存取檔案，不依賴原映像的 block 配置。`FREEGEMAS` 是遊戲目錄 marker，HDV volume name 也固定為 `FREEGEMAS`。
+- ProDOS `OPEN` 使用獨立、256-byte 對齊的 `$B800` I/O buffer；payload READ 使用 `$0C00` staging buffer。不要讓檔案資料覆蓋 ProDOS I/O buffer。返回 resident loader 前需關閉遊戲最後開啟的檔案，避免 loader 重用 I/O buffer 時失敗。
+- HDV builder 對新產生的普通檔案目錄項目寫入本機 ProDOS 建置日期與時間（含 Y2K year encoding）；保留 ProDOS volume header 與模板系統檔的原始 metadata。
 - `generated/`：CMake 和 HDV builder 的輸入素材。不要只修改輸出 `.bin`／`.hdv`；先修正來源，再重新產生。
 
 ## 建置和交付
@@ -40,6 +43,8 @@ cmake --build vera\llvm\build --target disk --parallel 4
 - `llvm/build/freegemas.bin`／`freegemas4.bin`：slot 2／slot 4 遊戲程式。
 - `llvm/build/title.bin`／`title4.bin`、`howto.bin`／`howto4.bin`、`option.bin`／`option4.bin`：各頁面程式。
 - `freegemas.hdv`：可開機的 800 KB 測試映像。
+- File-level 安裝時，將 HDV 所有檔案複製到目標 ProDOS volume／目錄，唯獨排除 `PRODOS`；保留 `FREEGEMAS` marker，將 ProDOS prefix 指向該目錄後執行 `FREEGEM.SYSTEM`。
+- 已用 AppleWin 驗證直接由 HDV 開機、進入遊戲、回到 Title；使用者也確認複製到 VeraSD 可執行，且 `HISCORE.DAT` 能持久寫入。這些結果不取代 Apple II 實機驗證。
 
 AppleWin 重新建置前先卸載或關閉正在使用該 HDV 的模擬器。確認載入提示、slot 2 和 slot 4 路徑、模式切換及遊戲畫面後，再交付映像；不要只根據編譯成功宣稱實機驗證完成。
 

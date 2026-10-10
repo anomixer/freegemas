@@ -17,7 +17,7 @@ static Sample samples[5];
  * Music runtime uses its own cache, so PCM refills cannot overwrite it. */
 static uint8_t *const buffer=(uint8_t *)0x0C00;
 static uint8_t preload_page[256];
-static uint16_t blocks[48],remaining;
+static uint16_t remaining;
 static uint32_t cursor;
 static uint8_t ready,cached_aux,initial_fill;
 extern void pcm_copy(void),pcm_vram_copy(void);
@@ -56,12 +56,10 @@ void sound_init(void) {
         if(!disk_file(names[n],n==1?8u:10u,&key,&size)||size>24576u||(size&1u))return;
         if(total+size>((uint32_t)VRAM_PAGES<<8))return;
         samples[n].length=(uint16_t)size;samples[n].offset=total;
-        disk_read(key,buffer);if(mli_status)return;
-        for(index=0;index<48;index++)blocks[index]=(uint16_t)buffer[index]|((uint16_t)buffer[256u+index]<<8);
         index=0;
         while(done<size) {
             uint16_t count=size-done>512u?512u:(uint16_t)(size-done),i;
-            disk_read(blocks[index++],buffer);if(mli_status)return;
+            disk_read(index++,buffer);if(mli_status)return;
             for(i=0;i<count;i++) {
                 preload_page[fill++]=buffer[i];
                 if(!fill){if(!store_page(page++))return;}

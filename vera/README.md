@@ -28,6 +28,12 @@ AppleWin.exe -s2 vera -s7 hdc -h1 C:\dev\freegemas\vera\freegemas.hdv
 
 Close or unmount the image before rebuilding if AppleWin has it locked.
 
+## Install from ProDOS files
+
+The HDV volume is named `FREEGEMAS`. To install on another ProDOS volume or in a subdirectory, copy all files from the HDV into the target volume or directory except `PRODOS`. Keep the `FREEGEMAS` marker file with the game files, set the ProDOS prefix to that location, and launch `FREEGEM.SYSTEM`. The loader and game open their programs, scenes, graphics, music, sound effects, and `HISCORE.DAT` by filename, so their block allocation can differ from the packaged HDV. Newly generated file entries include the local build date and time in ProDOS format.
+
+Direct HDV boot and the game-to-title return have been verified in AppleWin. File-level installation on VeraSD has also been confirmed by the user, including persistent high-score writes to `HISCORE.DAT`.
+
 Startup checks for VERA in slot 2 or 4. If neither is detected, it still shows the full text introduction, author, URL, mouse status, and controls. It displays `STATUS: VERA NOT DETECTED` and `STOPPED: VERA REQUIRED IN SLOT 2 OR 4`, then halts without entering the title or game. Keys cannot bypass this stop.
 
 ## Controls

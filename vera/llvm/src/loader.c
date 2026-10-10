@@ -5,9 +5,11 @@
 #include <stdint.h>
 #include "hiscore.h"
 
-extern uint8_t mli_unit, mli_buf_lo, mli_buf_hi, mli_blk_lo, mli_blk_hi, mli_status;
-extern void mli_read_block(void);
-extern void mli_write_block(void);
+extern uint8_t mli_status;
+extern uint8_t mli_open_params[], mli_close_params[], mli_read_params[];
+extern uint8_t mli_write_params[], mli_mark_params[], mli_prefix_params[], mli_eof_params[];
+extern void mli_open(void), mli_close(void), mli_read(void), mli_write(void);
+extern void mli_set_mark(void), mli_get_prefix(void), mli_get_eof(void);
 extern void mli_quit(void);
 extern const uint8_t trampoline_src[], trampoline_src_end[];
 extern void launch_image(void);
@@ -15,7 +17,6 @@ extern uint16_t scene_src, scene_count, scene_data_port;
 extern void scene_copy(void);
 extern void clear_text(void);
 
-#define BOOT_UNIT (*(volatile uint8_t *)0xBF30)
 #define NEXT_IMAGE (*(volatile uint8_t *)0x03F0)
 #define LOAD_GAME_MAGIC 0xA5u
 #define LOAD_HOWTO_MAGIC 0xA6u
@@ -26,7 +27,7 @@ extern void clear_text(void);
 #define DETECTED_VERA (*(volatile uint8_t *)0x03EC)
 
 static uint8_t * const buf = (uint8_t *)0x0C00;
-static uint8_t * const index_buf = (uint8_t *)0xB800;
+static uint8_t * const path_buf = (uint8_t *)0x0B00;
 
 /* Keep loader failures observable even before VERA is initialized. */
 static void status(const char *s) {
@@ -36,6 +37,15 @@ static void status(const char *s) {
     while (*s) *p++ = (uint8_t)(*s++ | 0x80);
 }
 static void fail(const char *s) { status(s); for (;;) {} }
+static void fail_code(const char *s, uint8_t code) {
+    volatile uint8_t *p = (volatile uint8_t *)0x0400;
+    uint8_t n;
+    status(s);
+    while (*s++) ++p;
+    n = (uint8_t)(code >> 4); *p++ = (uint8_t)((n < 10 ? '0' + n : 'A' + n - 10) | 0x80);
+    n = (uint8_t)(code & 15); *p = (uint8_t)((n < 10 ? '0' + n : 'A' + n - 10) | 0x80);
+    for (;;) {}
+}
 
 static uint8_t probe_vera(uint16_t base) {
     volatile uint8_t *r = (volatile uint8_t *)base;
@@ -47,58 +57,80 @@ static uint8_t probe_vera(uint16_t base) {
     return r[0]==1;
 }
 
-static void read_block(uint8_t unit, uint16_t block, uint8_t *dest) {
-    mli_unit = unit;
-    mli_buf_lo = (uint8_t)(uint16_t)dest;
-    mli_buf_hi = (uint8_t)((uint16_t)dest >> 8);
-    mli_blk_lo = (uint8_t)block;
-    mli_blk_hi = (uint8_t)(block >> 8);
-    mli_read_block();
-}
-
-static uint8_t equal_name(const uint8_t *entry, const char *name) {
-    uint8_t i, n = entry[0] & 15u;
-    for (i = 0; name[i]; ++i)
-        if (i >= n || (entry[1u + i] & 0x7Fu) != (uint8_t)name[i]) return 0;
-    return i == n;
-}
-
-static uint8_t find_file(uint8_t unit, const char *name, uint8_t *storage,
-                         uint16_t *key, uint32_t *eof) {
-    uint16_t block = 2;
-    while (block) {
-        uint8_t i;
-        read_block(unit, block, buf);
-        if (mli_status) return 0;
-        for (i = block == 2 ? 1 : 0; i < 13; ++i) {
-            const uint8_t *entry = buf + 4u + (uint16_t)i * 39u;
-            if (!(entry[0] >> 4) || !equal_name(entry, name)) continue;
-            *storage = entry[0] >> 4;
-            *key = (uint16_t)entry[0x11] | ((uint16_t)entry[0x12] << 8);
-            *eof = (uint32_t)entry[0x15] | ((uint32_t)entry[0x16] << 8) | ((uint32_t)entry[0x17] << 16);
-            return 1;
-        }
-        block = (uint16_t)buf[2] | ((uint16_t)buf[3] << 8);
+static uint8_t open_prefix_file(const char *name) {
+    uint8_t i, len;
+    uintptr_t p = (uintptr_t)path_buf;
+    mli_prefix_params[1] = (uint8_t)p;
+    mli_prefix_params[2] = (uint8_t)(p >> 8);
+    mli_get_prefix();
+    if (mli_status || path_buf[0] > 63) return 0;
+    len = path_buf[0];
+    if (len && path_buf[len] != '/') {
+        if (len >= 63) return 0;
+        path_buf[++len] = '/';
     }
-    return 0;
+    for (i = 0; name[i]; ++i) {
+        if (len >= 64) return 0;
+        path_buf[++len] = (uint8_t)name[i];
+    }
+    path_buf[0] = len;
+    p = (uintptr_t)path_buf;
+    mli_open_params[1] = (uint8_t)p;
+    mli_open_params[2] = (uint8_t)(p >> 8);
+    /* ProDOS needs a separate 1 KB, page-aligned I/O buffer.  Keep file
+       payload reads at $0C00, away from ProDOS directory/file bookkeeping. */
+    mli_open_params[3] = 0x00;
+    mli_open_params[4] = 0xB8;
+    mli_open_params[5] = 0;
+    mli_open();
+    return mli_status == 0;
+}
+
+static uint8_t read_file(uint8_t ref, uint32_t offset, uint16_t count,
+                         uint8_t *dest) {
+    uintptr_t p;
+    mli_mark_params[1] = ref;
+    mli_mark_params[2] = (uint8_t)offset;
+    mli_mark_params[3] = (uint8_t)(offset >> 8);
+    mli_mark_params[4] = (uint8_t)(offset >> 16);
+    mli_set_mark();
+    if (mli_status) fail("MARK ERROR");
+    p = (uintptr_t)dest;
+    mli_read_params[1] = ref;
+    mli_read_params[2] = (uint8_t)p;
+    mli_read_params[3] = (uint8_t)(p >> 8);
+    mli_read_params[4] = (uint8_t)count;
+    mli_read_params[5] = (uint8_t)(count >> 8);
+    mli_read_params[6] = mli_read_params[7] = 0;
+    mli_read();
+    if (mli_status) fail_code("READ ERROR ", mli_status);
+    if (mli_read_params[6] != (uint8_t)count
+        || mli_read_params[7] != (uint8_t)(count >> 8)) fail("READ SHORT");
+    return 1;
 }
 
 /* The title art is streamed while the SYS image still owns the MLI state.
  * TITLE.BIN is then only a small palette/input program below $2000. */
-static uint8_t stream_scene(uint8_t unit, uint8_t vera_slot, const char *scene) {
-    uint8_t storage, run = 0, need_count = 1, entry = 0, raw = 0;
-    uint16_t key, p, i;
+static uint8_t stream_scene(uint8_t vera_slot, const char *scene) {
+    uint8_t ref, run = 0, need_count = 1, raw = 0;
+    uint16_t p;
     uint32_t eof, done = 0;
     volatile uint8_t *v = (volatile uint8_t *)(vera_slot == 2 ? 0xC200 : 0xC400);
-    if (!find_file(unit, scene, &storage, &key, &eof) || storage != 2) return 0;
-    read_block(unit, key, buf); if (mli_status) return 0;
-    for (i = 0; i < 512; ++i) index_buf[i] = buf[i];
+    if (!open_prefix_file(scene)) fail("SCN OPEN");
+    ref = mli_open_params[5];
+    mli_eof_params[1] = ref;
+    mli_get_eof();
+    if (mli_status) { mli_close_params[1] = ref; mli_close(); fail("SCN EOF"); }
+    eof = (uint32_t)mli_eof_params[2] | ((uint32_t)mli_eof_params[3] << 8)
+        | ((uint32_t)mli_eof_params[4] << 16);
+    if (!eof) { mli_close_params[1] = ref; mli_close(); fail("SCN EMPTY"); }
     v[5] = 0; v[2] = 0x10; v[1] = 0; v[0] = 0; /* DATA0, VRAM $00000, +1 */
     scene_data_port=(uint16_t)(v+3);
     while (done < eof) {
-        uint16_t block = (uint16_t)index_buf[entry] | ((uint16_t)index_buf[256u + entry] << 8);
         uint16_t n = eof - done > 512u ? 512u : (uint16_t)(eof - done);
-        read_block(unit, block, buf); if (mli_status) return 0;
+        if (!read_file(ref, done, n, buf)) {
+            mli_close_params[1] = ref; mli_close(); fail("SCN READ");
+        }
         if(raw){scene_src=(uint16_t)buf;scene_count=n;scene_copy();}
         else for (p = 0; p < n; ++p) {
             uint8_t byte = buf[p];
@@ -110,18 +142,20 @@ static uint8_t stream_scene(uint8_t unit, uint8_t vera_slot, const char *scene) 
             }
             else { while (run--) v[3] = byte; need_count = 1; }
         }
-        done += n; ++entry;
+        done += n;
     }
+    mli_close_params[1] = ref; mli_close();
     return need_count;
 }
 
 static void scores(void) {
-    uint8_t storage, i;
-    uint16_t key;
-    uint32_t eof;
-    if (!find_file(BOOT_UNIT, "HISCORE.DAT", &storage, &key, &eof) || storage != 1 || eof != 12) return;
-    read_block(BOOT_UNIT, key, buf);
-    if (mli_status) return;
+    uint8_t i, ref, saved = 0;
+    uintptr_t p;
+    if (!open_prefix_file("HISCORE.DAT")) return;
+    ref = mli_open_params[5];
+    if (!read_file(ref, 0, 12, buf)) {
+        mli_close_params[1] = ref; mli_close(); return;
+    }
     if (HISCORE_INIT != 0xA5u) {
         HIGH_SCORES[0] = HIGH_SCORES[1] = 0;
         if (buf[0]=='F' && buf[1]=='G' && buf[2]=='H' && buf[3]==1)
@@ -130,15 +164,27 @@ static void scores(void) {
     } else if(HISCORE_DIRTY) {
         buf[0]='F';buf[1]='G';buf[2]='H';buf[3]=1;
         for(i=0;i<8;i++)buf[4+i]=((volatile uint8_t *)0x03E0)[i];
-        mli_write_block();
-        if(!mli_status) HISCORE_DIRTY=0;
+        mli_mark_params[1] = ref;
+        mli_mark_params[2] = mli_mark_params[3] = mli_mark_params[4] = 0;
+        mli_set_mark();
+        p = (uintptr_t)buf;
+        mli_write_params[1] = ref;
+        mli_write_params[2] = (uint8_t)p;
+        mli_write_params[3] = (uint8_t)(p >> 8);
+        mli_write_params[4] = 12;
+        mli_write_params[5] = mli_write_params[7] = 0;
+        mli_write_params[6] = 0;
+        if (!mli_status) mli_write();
+        if(!mli_status && mli_write_params[6] == 12 && !mli_write_params[7]) saved = 1;
     }
+    mli_close_params[1] = ref; mli_close();
+    if (saved) HISCORE_DIRTY=0;
 }
 
 int main(void) {
-    uint8_t slot, storage, count, image;
+    uint8_t slot, count, image, ref;
     uint16_t i;
-    uint16_t key, blocks;
+    uint16_t blocks;
     uint32_t eof;
     const char *name;
     uint8_t *trampoline;
@@ -158,6 +204,9 @@ int main(void) {
     else if (probe_vera(0xC400)) slot = 4;
     else {slot=0;NEXT_IMAGE=LOAD_INTRO_MAGIC;}
     DETECTED_VERA=slot;
+
+    if (!open_prefix_file("FREEGEMAS")) fail(" GAME DIRECTORY");
+    mli_close_params[1] = mli_open_params[5]; mli_close();
 
     /* Hide the previous VERA frame before either scene is streamed.  Without
        this, returning from game shows title pixels through the game palette. */
@@ -181,26 +230,31 @@ int main(void) {
     else if(image==LOAD_INTRO_MAGIC){name=slot==4?"INTRO4.BIN":"INTRO.BIN";}
     else{status("LOADING TITLE...");name=slot==4?"TITLE4.BIN":"TITLE.BIN";}
     NEXT_IMAGE = 0;
-    if(image!=LOAD_GAME_MAGIC && image!=LOAD_INTRO_MAGIC){const char *scene=image==LOAD_HOWTO_MAGIC?"HOWTO.RLE":image==LOAD_OPTIONS_MAGIC?"OPTION.RLE":"TITLE.RLE";if(!stream_scene(BOOT_UNIT,slot,scene))fail(" SCENE");}
-    if (!find_file(BOOT_UNIT, name, &storage, &key, &eof) || eof == 0) fail(" FILE");
+    if(image!=LOAD_GAME_MAGIC && image!=LOAD_INTRO_MAGIC){const char *scene=image==LOAD_HOWTO_MAGIC?"HOWTO.RLE":image==LOAD_OPTIONS_MAGIC?"OPTION.RLE":"TITLE.RLE";if(!stream_scene(slot,scene))fail(" SCENE");}
+    if (!open_prefix_file(name)) fail(" FILE");
+    ref = mli_open_params[5];
+    mli_eof_params[1] = ref;
+    mli_get_eof();
+    if (mli_status) fail(" EOF");
+    eof = (uint32_t)mli_eof_params[2] | ((uint32_t)mli_eof_params[3] << 8)
+        | ((uint32_t)mli_eof_params[4] << 16);
+    if (!eof) fail(" FILE");
     if(eof > 0x8800u) fail(" IMAGE TOO LARGE");
     blocks = (uint16_t)((eof + 511u) / 512u);
     if (blocks == 0 || blocks > 255) fail(" SIZE");
-    if (storage == 1) {
-        for (i = 0; i < 512; ++i) index_buf[i] = 0;
-        index_buf[0] = (uint8_t)key; index_buf[256] = (uint8_t)(key >> 8);
-        blocks = 1;
-    } else if (storage == 2) {
-        read_block(BOOT_UNIT, key, buf); if (mli_status) fail(" INDEX");
-        for (i = 0; i < 512; ++i) index_buf[i] = buf[i];
-    } else fail(" TYPE");
 
-    /* Permit MLI reads into the $0800-$B7FF image range. */
+    /* Permit MLI reads into the $3000-$B7FF image range. */
     for (i = 1; i < 23; ++i) ((volatile uint8_t *)0xBF58)[i] = 0;
     count = (uint8_t)(trampoline_src_end - trampoline_src);
     trampoline = (uint8_t *)0x0300;
     for (i = 0; i < count; ++i) trampoline[i] = trampoline_src[i];
-    *(volatile uint8_t *)0x03C1 = BOOT_UNIT;
+    *(volatile uint8_t *)0x03C1 = ref;
+    *(volatile uint8_t *)0x03C2 = 0x00;
+    *(volatile uint8_t *)0x03C3 = 0x30;
+    *(volatile uint8_t *)0x03C4 = 0x00;
+    *(volatile uint8_t *)0x03C5 = 0x02;
+    *(volatile uint8_t *)0x03D0 = 1;
+    *(volatile uint8_t *)0x03D1 = ref;
     *(volatile uint8_t *)0x03C8 = (uint8_t)blocks;
     launch_image();
     return 0;
