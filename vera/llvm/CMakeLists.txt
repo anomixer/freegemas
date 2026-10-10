@@ -3,6 +3,7 @@ project(FreegemasIIvera LANGUAGES NONE)
 
 set(LLVM_MOS_SDK "C:/dev/llvm-mos-sdk/install" CACHE PATH "llvm-mos SDK")
 find_program(MOS_CLANG NAMES mos-apple2e-clang.bat mos-apple2e-clang HINTS "${LLVM_MOS_SDK}/bin" NO_DEFAULT_PATH REQUIRED)
+find_program(CADIUS_EXECUTABLE NAMES cadius cadius.exe HINTS "${CMAKE_CURRENT_SOURCE_DIR}/tools" REQUIRED)
 
 set(SRC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 set(MENU_MOUSE "${SRC}/menu_mouse.c" "${SRC}/mouse.S" "${SRC}/mli.s")
@@ -131,6 +132,8 @@ endforeach()
 add_custom_target(disk
   COMMAND node "${CMAKE_CURRENT_SOURCE_DIR}/../tools/build_sound.mjs"
   COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/../tools/build_music.py" --header "${MUSIC_HEADER}"
-  COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/tools/build_hdv.py"
-  DEPENDS freegemas
+  COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/tools/build_hdv.py" --cadius "${CADIUS_EXECUTABLE}"
+  DEPENDS freegemas "${CMAKE_CURRENT_SOURCE_DIR}/tools/build_hdv.py" "${CADIUS_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../assets/prodos-system/PRODOS#FF0000"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../assets/prodos-system/CLOCK.SYSTEM#FF0000"
   WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/..")

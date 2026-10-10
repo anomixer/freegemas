@@ -101,7 +101,6 @@ if __name__=='__main__':
     data,curves,frequencies,tree=build(raw)
     gained=gain_psg(raw)
     (VERA/'generated/music.fgm').write_bytes(data)
-    (VERA/'generated/music_curves.bin').write_bytes(curves)
     (VERA/'generated/music_pure_gained.psg').write_bytes(gained)
     header=f'#define MUSIC_CURVE_SIZE {len(curves)}u\n#define MUSIC_CURVE_TAIL_SIZE {max(1,len(curves)-5632)}u\n'
     header+=f'#define MUSIC_FREQUENCIES {len(frequencies)}u\nstatic const uint16_t music_frequencies[]={{'+','.join(map(str,frequencies))+'};\n'

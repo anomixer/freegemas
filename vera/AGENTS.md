@@ -23,8 +23,10 @@
 - `llvm/tools/build_hdv.py`：把程式與 RLE 場景打包至 800 KB ProDOS HDV，並建立跨 directory block 的檔案目錄。
 - `llvm/src/loader.c`、`main.c`、`sound.c`、`music.c`：ProDOS 檔案層級載入；以 GET_PREFIX 組合遊戲目錄路徑，再透過 OPEN／GET_EOF／SET_MARK／READ／WRITE 存取檔案，不依賴原映像的 block 配置。`FREEGEMAS` 是遊戲目錄 marker，HDV volume name 也固定為 `FREEGEMAS`。
 - ProDOS `OPEN` 使用獨立、256-byte 對齊的 `$B800` I/O buffer；payload READ 使用 `$0C00` staging buffer。不要讓檔案資料覆蓋 ProDOS I/O buffer。返回 resident loader 前需關閉遊戲最後開啟的檔案，避免 loader 重用 I/O buffer 時失敗。
-- HDV builder 對新產生的普通檔案目錄項目寫入本機 ProDOS 建置日期與時間（含 Y2K year encoding）；保留 ProDOS volume header 與模板系統檔的原始 metadata。
+- HDV builder 使用 Cadius 建立全新的 `FREEGEMAS` 800 KB ProDOS volume，並加入 `assets/prodos-system/` 中的 `PRODOS` 與 `CLOCK.SYSTEM`。遊戲檔案由 packager 配置 block，執行時依 ProDOS 檔名讀取，不依賴 HDV 固定 block。
+- 新產生的普通檔案目錄項目寫入本機 ProDOS 建置日期與時間（含 Y2K year encoding）；保留 Cadius 建立的 volume header 與系統檔 metadata。Windows 使用 `llvm/tools/cadius.exe`；其他平台需將 Cadius 放入 `PATH` 或設定 `CADIUS_EXECUTABLE`。
 - `generated/`：CMake 和 HDV builder 的輸入素材。不要只修改輸出 `.bin`／`.hdv`；先修正來源，再重新產生。
+- `generated/` 不保留未採用的 MIDI／PSG 比較輸出；音樂研究文件中的歷史檔名是過往產物記錄，不代表目前仍存在或屬於建置依賴。
 
 ## 建置和交付
 
@@ -36,7 +38,7 @@ cmake -S vera\llvm -B vera\llvm\build
 cmake --build vera\llvm\build --target disk --parallel 4
 ```
 
-資產腳本需要 `ffmpeg` 和 `ffprobe`。LLVM-MOS SDK 預設在 `C:\dev\llvm-mos-sdk\install`；CMake cache 可用 `-DLLVM_MOS_SDK=...` 指定其他位置。HDV builder 使用 repo 內的 `vera/assets/800kb.hdv` 作為 ProDOS 基底，以腳本位置解析路徑，不再依賴 time-pilot checkout。模板最初複製自 TimePilot-IIvera 的同名映像，保留 ProDOS／CLOCK.SYSTEM 與 Bitsy Bye；不要把執行遊戲後的映像覆寫回模板。
+資產腳本需要 `ffmpeg` 和 `ffprobe`。LLVM-MOS SDK 預設在 `C:\dev\llvm-mos-sdk\install`；CMake cache 可用 `-DLLVM_MOS_SDK=...` 指定其他位置。HDV builder 使用 Cadius 建立新 volume，不再依賴 `800kb.hdv` 模板；ProDOS 和 CLOCK.SYSTEM 來源位於 `vera/assets/prodos-system/`。
 
 產物：
 
@@ -44,7 +46,7 @@ cmake --build vera\llvm\build --target disk --parallel 4
 - `llvm/build/title.bin`／`title4.bin`、`howto.bin`／`howto4.bin`、`option.bin`／`option4.bin`：各頁面程式。
 - `freegemas.hdv`：可開機的 800 KB 測試映像。
 - File-level 安裝時，將 HDV 所有檔案複製到目標 ProDOS volume／目錄，唯獨排除 `PRODOS`；保留 `FREEGEMAS` marker，將 ProDOS prefix 指向該目錄後執行 `FREEGEM.SYSTEM`。
-- 已用 AppleWin 驗證直接由 HDV 開機、進入遊戲、回到 Title；使用者也確認複製到 VeraSD 可執行，且 `HISCORE.DAT` 能持久寫入。這些結果不取代 Apple II 實機驗證。
+- 舊版範本 HDV 已用 AppleWin 驗證開機、進入遊戲與返回 Title；檔案層級複製到 VeraSD 也已確認可執行且 `HISCORE.DAT` 可持久寫入。Cadius 新建的 HDV 已建置並檢查 ProDOS catalog，尚待重新驗證開機。模擬器結果不取代 Apple II 實機驗證。
 
 AppleWin 重新建置前先卸載或關閉正在使用該 HDV 的模擬器。確認載入提示、slot 2 和 slot 4 路徑、模式切換及遊戲畫面後，再交付映像；不要只根據編譯成功宣稱實機驗證完成。
 

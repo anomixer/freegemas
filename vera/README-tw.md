@@ -8,7 +8,7 @@
 
 ## 建置
 
-需要 Node.js、Python（NumPy）、ffmpeg／ffprobe、CMake、LLVM-MOS SDK。ProDOS 基底映像已附於 `assets/800kb.hdv`，不依賴 time-pilot checkout。
+需要 Node.js、Python（NumPy）、ffmpeg／ffprobe、CMake、LLVM-MOS SDK 與 Cadius。Windows 使用隨附的 `llvm/tools/cadius.exe`；其他平台需將 Cadius 放入 `PATH`，或以 `-DCADIUS_EXECUTABLE=/path/to/cadius` 指定。ProDOS 系統檔位於 `assets/prodos-system/`，不依賴 time-pilot checkout。
 
 在 repo 根目錄執行：
 
@@ -20,7 +20,7 @@ cmake --build vera\llvm\build --target disk --parallel 4
 
 `build_assets.mjs` 從 repo 的 `media/` 產生 indexed bitmap、sprites、palette 與 RLE 場景。CMake 會建立 slot 2／slot 4 的遊戲 binary，`build_hdv.py` 再將它們和場景檔打包成 `vera/freegemas.hdv`。
 
-目前工具鏈預設位於 `C:\dev\llvm-mos-sdk\install`；其他安裝位置可用 CMake 的 `-DLLVM_MOS_SDK=...` 指定。HDV builder 依腳本位置解析 repo 內的模板路徑，不需修改。
+目前工具鏈預設位於 `C:\dev\llvm-mos-sdk\install`；其他安裝位置可用 CMake 的 `-DLLVM_MOS_SDK=...` 指定。HDV builder 使用 Cadius 建立新的 800 KB ProDOS volume，再加入系統檔與遊戲檔案，不再依賴 HDV 範本。
 
 AppleWin 範例：
 
@@ -34,7 +34,7 @@ AppleWin 若正掛載映像，重建前先關閉模擬器，避免 HDV 被鎖住
 
 HDV volume name 為 `FREEGEMAS`。若要安裝到其他 ProDOS volume 或子目錄，請將 HDV 內所有檔案複製到目標位置，唯獨不複製 `PRODOS`。請保留 `FREEGEMAS` marker 檔，將 ProDOS prefix 設為該位置，再執行 `FREEGEM.SYSTEM`。Loader 和遊戲會依檔名開啟程式、場景、圖樣、音樂、音效及 `HISCORE.DAT`，不依賴原 HDV 的 block 配置。新產生的檔案目錄項目會寫入本機建置日期與時間，格式符合 ProDOS。
 
-已用 AppleWin 確認可直接由 HDV 開機、進入遊戲並返回 Title。使用者也確認檔案層級安裝到 VeraSD 後可正常執行，且 `HISCORE.DAT` 能持久寫入。
+舊版以範本建立的 HDV 已用 AppleWin 確認可直接開機、進入遊戲並返回 Title；檔案層級安裝到 VeraSD 也已確認可執行且 `HISCORE.DAT` 能持久寫入。新的 Cadius HDV 已建置並檢查 ProDOS catalog，但仍需重新驗證開機。
 
 啟動時先偵測 slot 2／4 的 VERA；兩者皆無卡時仍完整顯示作者、網址、滑鼠偵測及操作說明。STATUS 顯示 `VERA NOT DETECTED`，下方顯示 `STOPPED: VERA REQUIRED IN SLOT 2 OR 4` 並停止；按鍵也不會進入 Title 或遊戲。
 
@@ -64,7 +64,8 @@ FIFO 見底時會先停止採樣，再恢復16-bit樣本對齊並預填 FIFO 後
 
 - `llvm/src/`：loader、title、menu screens、遊戲與棋盤邏輯。
 - `llvm/tools/build_hdv.py`：建立 ProDOS HDV。
-- `assets/800kb.hdv`：隨 repo 附帶的 800 KB ProDOS 開機模板（含 Bitsy Bye），原始副本來自 TimePilot-IIvera；建置不需要 time-pilot repo。
+- `assets/prodos-system/`：Cadius 建立 HDV volume 時加入的 ProDOS 與 CLOCK.SYSTEM 系統檔。
+- `llvm/tools/cadius.exe`：Windows 隨附的 Cadius；其他平台可使用自行安裝的版本。
 - `tools/build_assets.mjs`：從原作素材產生 VERA assets。
 - `generated/`：重建 binary 所需的 palette、sprite、tile 和 RLE 輸入檔。
 - `AGENTS.md`：架構、記憶體配置、開發流程與容易踩到的問題。

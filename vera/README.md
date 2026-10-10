@@ -8,7 +8,7 @@ The bootable 800 KB disk image is [freegemas.hdv](freegemas.hdv).
 
 ## Requirements and build
 
-You need Node.js, Python/NumPy, ffmpeg/ffprobe, CMake, and the LLVM-MOS SDK. The ProDOS template is included at `assets/800kb.hdv`; a separate time-pilot checkout is not required.
+You need Node.js, Python/NumPy, ffmpeg/ffprobe, CMake, the LLVM-MOS SDK, and Cadius. Windows uses the bundled `llvm/tools/cadius.exe`; other platforms need Cadius on `PATH` or can pass `-DCADIUS_EXECUTABLE=/path/to/cadius`. The ProDOS system files are included under `assets/prodos-system/`; a separate time-pilot checkout is not required.
 
 Run from the repository root:
 
@@ -32,7 +32,7 @@ Close or unmount the image before rebuilding if AppleWin has it locked.
 
 The HDV volume is named `FREEGEMAS`. To install on another ProDOS volume or in a subdirectory, copy all files from the HDV into the target volume or directory except `PRODOS`. Keep the `FREEGEMAS` marker file with the game files, set the ProDOS prefix to that location, and launch `FREEGEM.SYSTEM`. The loader and game open their programs, scenes, graphics, music, sound effects, and `HISCORE.DAT` by filename, so their block allocation can differ from the packaged HDV. Newly generated file entries include the local build date and time in ProDOS format.
 
-Direct HDV boot and the game-to-title return have been verified in AppleWin. File-level installation on VeraSD has also been confirmed by the user, including persistent high-score writes to `HISCORE.DAT`.
+Direct HDV boot and the game-to-title return were verified in AppleWin with the previous template-based image. The new Cadius-generated HDV has been built and its ProDOS catalog checked; booting this newly packaged image still needs verification. File-level installation on VeraSD was confirmed with the earlier image, including persistent high-score writes to `HISCORE.DAT`.
 
 Startup checks for VERA in slot 2 or 4. If neither is detected, it still shows the full text introduction, author, URL, mouse status, and controls. It displays `STATUS: VERA NOT DETECTED` and `STOPPED: VERA REQUIRED IN SLOT 2 OR 4`, then halts without entering the title or game. Keys cannot bypass this stop.
 
@@ -77,7 +77,8 @@ After the game binary starts, `LOADING GAME...` shows an asset-loading progress 
 
 - `llvm/src/`: loader, title/menu programs, game, graphics, mouse, and audio drivers.
 - `llvm/tools/build_hdv.py`: ProDOS disk packager.
-- `assets/800kb.hdv`: included ProDOS/Bitsy Bye template, originally copied from TimePilot-IIvera.
+- `assets/prodos-system/`: ProDOS and CLOCK.SYSTEM source files added by Cadius to a newly created HDV volume.
+- `llvm/tools/cadius.exe`: bundled Windows Cadius executable; other platforms can supply their own.
 - `tools/build_assets.mjs`: original-media conversion for VERA graphics.
 - `tools/build_mouse.mjs`: original hand-cursor conversion.
 - `generated/`: palette, sprite, scene, and audio inputs needed for builds.

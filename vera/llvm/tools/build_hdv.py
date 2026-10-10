@@ -2,9 +2,10 @@
 """Create a bootable 800 KB ProDOS HDV for the segmented Freegemas port."""
 from datetime import datetime
 from pathlib import Path
+import subprocess
 
 BLOCK = 512
-RESERVE = 100                 # ProDOS/CLOCK.SYSTEM from the known-good base HDV
+RESERVE = 100                 # Keep game files above the ProDOS/system allocation area
 KEEP = {"PRODOS", "CLOCK.SYSTEM"}
 BUILD_TIME = datetime.now()
 
@@ -69,13 +70,25 @@ def entry(vol, offset, f):
     vol[offset+0x1e]=0xc3; vol[offset+0x1f]=f['aux']&255; vol[offset+0x20]=f['aux']>>8; vol[offset+0x25]=2
     vol[offset+0x21:offset+0x25]=BUILD_PRODOS_DATETIME
 
-def main(output=None):
+def main(output=None, cadius=None):
     here=Path(__file__).resolve().parent; llvm=here.parent; vera=llvm.parent; root=vera.parent
-    base=vera/'assets'/'800kb.hdv'
+    cadius=Path(cadius).resolve() if cadius else here/'cadius.exe'
+    system_dir=vera/'assets'/'prodos-system'
+    prodos=system_dir/'PRODOS#FF0000'
+    clock=system_dir/'CLOCK.SYSTEM#FF0000'
+    base=llvm/'build'/'cadius-base.hdv'
     out=Path(output).resolve() if output else vera/'freegemas.hdv'
     score_source=out if out.exists() else vera/'freegemas.hdv'
     scores=saved_scores(score_source.read_bytes()) if score_source.exists() else b'FGH\x01'+bytes(8)
+    for path, description in ((cadius, 'Cadius executable'), (prodos, 'ProDOS system file'), (clock, 'CLOCK.SYSTEM file')):
+        if not path.is_file(): raise FileNotFoundError(f'{description} not found: {path}')
+    base.parent.mkdir(parents=True, exist_ok=True)
+    if base.exists(): base.unlink()
+    subprocess.run([str(cadius), 'CREATEVOLUME', str(base), 'FREEGEMAS', '800KB'], check=True)
+    for system_file in (prodos, clock):
+        subprocess.run([str(cadius), 'ADDFILE', str(base), '/FREEGEMAS', str(system_file)], check=True)
     disk=bytearray(base.read_bytes())
+    base.unlink()  # Cadius base is only an intermediate; the completed image is written below.
     alloc=Alloc()
     system=(llvm/'build'/'freegemas.sys').read_bytes()
     if len(system)>=4 and (system[0]|system[1]<<8)==0x2000: system=system[4:]
@@ -136,4 +149,6 @@ if __name__=='__main__':
     import argparse
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,help='Alternate image path, e.g. while the normal HDV is mounted')
-    main(parser.parse_args().output)
+    parser.add_argument('--cadius',help='Path to the Cadius executable')
+    args=parser.parse_args()
+    main(args.output,args.cadius)

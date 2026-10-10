@@ -17,6 +17,7 @@
 
 # Executables
 *.exe
+!vera/llvm/tools/cadius.exe
 *.out
 *.app
 
