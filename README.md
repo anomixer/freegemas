@@ -86,7 +86,7 @@ Licensed under [Creative Commons: By Attribution 3.0](https://creativecommons.or
 
 ## Apple IIGS port
 
-An Apple IIGS port is maintained in [`iigs/`](iigs/). Read [`iigs/AGENTS.md`](iigs/AGENTS.md) for the current implementation notes and build instructions. The 320x200 Super Hi-Res game uses the same flat gem artwork in gameplay and the How to Play diagrams. The Options screen credits the IIGS port to anomixer and uses the larger VERA-aligned menu text.
+An Apple IIGS port is maintained in [`iigs/`](iigs/). Read [`iigs/AGENTS.md`](iigs/AGENTS.md) for the current implementation notes and build instructions. The 320x200 Super Hi-Res game uses the same flat gem artwork in gameplay and the How to Play diagrams. The gameplay board uses source-aligned wood shading with its color and contrast tuned to the VERA port; the flat gem artwork remains unchanged. The Options screen credits the IIGS port to anomixer and uses the larger VERA-aligned menu text.
 
 The IIGS Finder icon uses the game's square red gem. The build streams its DOC music through alternating 4 KiB wave tables. Table changes are synchronized to the DOC end interrupt, while PCM preparation stays in the foreground. Sound effects use separate DOC oscillator pairs. The current audio IRQ build was tested in GSplus: after a continuous capture, the user played a full round and reported no music skips, including during gameplay. Exit with the callback installed, other emulators, and real IIGS hardware still need verification. See [`iigs/AGENTS.md`](iigs/AGENTS.md) for implementation details and the latest validation status.
 

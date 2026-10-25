@@ -14,9 +14,8 @@ Outputs (iigs/merlin32/generated/):
   preview_tt.png   2x preview of the packed Time Trial scene
   gs2_offsets.json emulator automation data (find patterns, board, legal swaps)
 
-Board cells are flat two-tone wood with grid lines so the game can redraw any
-cell procedurally (blankCell in main.s) with an exact match to the streamed
-scene. HUD digit areas are flattened to the panel mid colour so the runtime
+Board cells retain source-aligned wood shading using the per-scanline palettes.
+The cached scene supplies exact pixels to blankCell in main.s after a move. HUD digit areas are flattened to the panel mid colour so the runtime
 erase is a plain fill. Ghost LCD digits in the panel art are removed for the
 same reason (they conflict with incremental digit redraw at this resolution).
 
@@ -59,7 +58,7 @@ TIME_FONT_SIZE, TIME_DIGIT_H = 62, 15
 
 # Fixed palette slot semantics on board scanlines (0..13); 14/15 are per-region
 # extras. Slot 13 stays reserved for the green hint frame drawn by the game.
-S_BLACK, S_WHITE, S_WOOD, S_WOODD, S_BLUE, S_BLUED, S_HINT = 0, 1, 9, 10, 11, 12, 13
+S_BLACK, S_WHITE, S_WOOD, S_WOODD, S_WOODL, S_BLUE, S_HINT = 0, 1, 9, 10, 11, 12, 13
 
 LAVENDER = (160, 169, 255)     # original score/time header colour
 CYAN = (78, 193, 190)          # original score/time digit colour
@@ -196,8 +195,7 @@ def quant(px, allowed, x, y):
 # Slot map shared by every game-screen zone (the runtime blitter, digit eraser
 # and hint frame hard-code these nibbles):
 #   0 black        1 white        2..8 gem bodies (gem 1..7)
-#   9/10 wood checker             11 background blue
-#   12 light blue (background rays and plaque/button border)
+#   9/10/11 wood tones            12 blue background / logo ink
 #   13 hint green  14/15 zone extras (logo tones, HUD accent, button accent)
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
@@ -207,7 +205,6 @@ LABEL_BLUE = (150, 180, 255)   # "Score" / "Time left" header text
 PANEL_FILL = (16, 46, 82)      # HUD plaque interior == the digit erase colour
 CYAN = (78, 193, 190)          # LCD digits (slot 14 on the HUD rows)
 HINT_GREEN = (51, 238, 102)    # hint frame (slot 13 on every row)
-BTN_FILL = (17, 51, 85)         # button plaque interior (dark navy, like VERA)
 PANEL_EDGE = (95, 150, 210)    # plaque/button border (slot 12 on every zone)
 LOGO_TONES = [(243, 69, 196), (195, 40, 158), (105, 8, 104)]
 
@@ -271,21 +268,33 @@ def build_palettes(base_rgb, menu_rgb):
             px = [base_rgb.getpixel((x, y)) for x in range(x0, x1 + 1)]
             return tuple(int(sum(p[i] for p in px) / len(px)) for i in range(3))
 
-        dark = [row_blue(y) for y in range(max(0, y0 - 1), min(SCREEN_H, y1 + 2))][1:-1]
-        lo = min(dark, key=lum)
-        p = [BLACK, WHITE] + gems + [wood_mid, wood_dark, row_blue(y0), row_blue(y1), HINT_GREEN]
+        # Keep three source-fitted wood shades in slots 9..11. Slot 12 is the
+        # backdrop ink (and a logo shade in the top band), leaving a fourth
+        # wood tone in plain bands for more texture.
+        # Fit each SCB band locally so wood lighting changes smoothly down the
+        # original board instead of collapsing to a two-colour checker.
+        wood_rows = range(max(BOARD_Y + 2, y0 - 1), min(BOARD_Y + BOARD_H - 2, y1 + 2))
+        wood_samples = [base_rgb.getpixel((x, y)) for y in wood_rows
+                        for x in range(BOARD_X + 2, BOARD_X + BOARD_W - 2, 2)]
+        row_wood = kmeans(wood_samples, 4) if wood_samples else (wood_deep, wood_dark, wood_mid, wood_light)
+        p = [BLACK, WHITE] + gems + [row_wood[2], row_wood[0], row_wood[3], row_blue(y1), HINT_GREEN]
         if kind == "logo":
+            p[11] = row_blue(y0)               # top band still needs a blue backdrop
             p[12] = LOGO_TONES[0]              # no rays on the logo band
             p += [LOGO_TONES[1], LOGO_TONES[2]]
         elif kind == "label":
+            p[12] = (0, 68, 136)
             p += [LABEL_BLUE, PANEL_FILL]
         elif kind == "digits":
+            p[12] = (0, 68, 136)
             p += [CYAN, PANEL_FILL]
         elif kind == "plain":
-            p += [wood_light, wood_deep]
+            p[12] = (0, 68, 136)
+            p += [row_wood[1], PANEL_FILL]
         else:
             k = int(kind[-1])
-            p += [ACCENTS[k][0], BTN_FILL]
+            p[12] = (0, 68, 136)
+            p += [ACCENTS[k][0], PANEL_FILL]
         assert len(p) == 16, (kind, len(p))
         palettes.append(p)
     assert len(palettes) <= 16
@@ -339,8 +348,7 @@ def build_scene(ctx, time_panel):
     wood_deep, wood_dark, wood_mid, wood_light = ctx["wood"]
     grid = [[0] * SCREEN_W for _ in range(SCREEN_H)]
 
-    # Background: solid zone blue, plus the art's brighter diagonal rays mapped
-    # to the light-blue slot. Nearest-colour, never ordered dithering.
+    # Background uses the blue ink in slot 12; slot 11 is a third wood tone.
     zstart = {}
     for y0, y1, kind in ZONES:
         for y in range(y0, y1 + 1):
@@ -349,13 +357,13 @@ def build_scene(ctx, time_panel):
         y0, span = zstart[y]
         frac = (y - y0 + 0.5) / span
         thr = int(frac * 16)
-        # the logo band keeps slot 12 for a logo tone, so no dithering there
+        # the logo band keeps its dedicated blue background and logo tones
         if ZONE_KIND[y] == "logo":
             for x in range(SCREEN_W):
                 grid[y][x] = 11
             continue
         for x in range(SCREEN_W):
-            grid[y][x] = 12 if BAYER[y % 4][x % 4] < thr else 11
+            grid[y][x] = 12 if BAYER[y % 4][x % 4] < thr else 15
 
     # Logo band (rows 0..27): quantise the pink wordmark to three logo tones
     # plus white/black -- no dithering, so the wordmark stays crisp.
@@ -371,17 +379,43 @@ def build_scene(ctx, time_panel):
                 c = base.getpixel((x, y))
                 grid[y][x] = min(logo_choices, key=lambda e: dist(c, e[0]))[1]
 
-    # Board: 2px dark rim plus the wood checker (no per-cell lines).
+    # Board: retain the source wood and cell shading. The cached scene is also
+    # the exact restoration image used after gem moves, so textured cells need
+    # no separate runtime redraw path.
+    errors = [[0.0, 0.0, 0.0] for _ in range(BOARD_W + 2)]
+    next_errors = [[0.0, 0.0, 0.0] for _ in range(BOARD_W + 2)]
+    previous_bank = -1
     for y in range(BOARD_Y, BOARD_Y + BOARD_H):
+        if scb[y] != previous_bank:
+            errors = [[0.0, 0.0, 0.0] for _ in range(BOARD_W + 2)]
+            next_errors = [[0.0, 0.0, 0.0] for _ in range(BOARD_W + 2)]
+            previous_bank = scb[y]
         gy = y - BOARD_Y
         for x in range(BOARD_X, BOARD_X + BOARD_W):
             gx = x - BOARD_X
             if gx < 2 or gx >= BOARD_W - 2 or gy < 2 or gy >= BOARD_H - 2:
                 grid[y][x] = 0
-            elif ((gy // CELL_H) + (gx // CELL_W)) % 2:
-                grid[y][x] = 10
             else:
-                grid[y][x] = 9
+                if ZONE_KIND[y] == "logo":
+                    candidates = (9, 10)
+                else:
+                    candidates = (9, 10, 11, 14) if ZONE_KIND[y] == "plain" else (9, 10, 11)
+                pos = gx + 1
+                source = base.getpixel((x, y))
+                colour = tuple(max(0, min(255, source[k] + errors[pos][k])) for k in range(3))
+                slot = min(candidates, key=lambda i: dist(colour, palettes[scb[y]][i]))
+                grid[y][x] = slot
+                chosen = palettes[scb[y]][slot]
+                # Diffuse palette error only through the static board artwork;
+                # preserve the two-pixel rim and 1px cell grid as crisp lines.
+                if (gx % CELL_W >= 2 and gy % CELL_H >= 2):
+                    error = [colour[k] - chosen[k] for k in range(3)]
+                    for k in range(3):
+                        errors[pos + 1][k] += error[k] * 7 / 16
+                        next_errors[pos - 1][k] += error[k] * 3 / 16
+                        next_errors[pos][k] += error[k] * 5 / 16
+                        next_errors[pos + 1][k] += error[k] / 16
+        errors, next_errors = next_errors, [[0.0, 0.0, 0.0] for _ in range(BOARD_W + 2)]
 
     # Left HUD column.
     draw_text_grid(grid, "Score", PANEL_X + (PANEL_W - text_w("Score")) // 2, 30, LABEL_SLOT)

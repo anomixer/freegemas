@@ -9,6 +9,7 @@
 - 遊戲資料、音效、音樂與 `HISCORE.DAT` 放在 `/DATA`；磁碟根目錄保留 `FREEGEM.S16`、`README.TXT` 和系統檔案。GS/OS 透過檔案呼叫讀取資產。
 - 現有功能含 Title、How to Play、Options、Time Trial、Endless、match/cascade、hint、reset、Game Over、滑鼠點選與相鄰寶石拖曳交換。鍵盤支援 WASD 與方向鍵。
 - 寶石採使用者核定的 2D 方塊像素風格。How to Play 使用與遊戲相同的 gem raster/palette。側欄 Show Hint 是發光燈泡，Reset Game 是圓形箭頭；其他場景可見的微小角落像素屬已知外觀，不要特別增加清理程式。
+- 棋盤木紋的來源位置與色調依 VERA 版對齊；使用分區 SHR palette 和離線色彩誤差擴散，動態消除仍從快取背景還原像素。
 
 ## 目錄與產物
 

@@ -49,10 +49,10 @@ def string_origin(value,masks,pitch):
 
 def polish_sidebar(packed, palettes, glyphs, time_panel):
     grid=[[(packed[y*160+x//2]>>(4 if x%2==0 else 0))&15 for x in range(320)] for y in range(200)]
-    for palette in palettes: palette[11]=(0,68,136)
     for y,row in enumerate(grid):
-        row[:96]=[11]*96; row[304:]=[11]*16
-        if y<14 or y>=190: row[96:304]=[11]*208
+        bg = 11 if y < 28 else 12
+        row[:96]=[bg]*96; row[304:]=[bg]*16
+        if y<14 or y>=190: row[96:304]=[11 if y < 28 else 12]*208
     def rect(x0,y0,x1,y1,colour):
         for y in range(y0,y1): grid[y][x0:x1]=[colour]*(x1-x0)
     def text(value,x,y,colour=1,scale_y=1):
@@ -63,7 +63,7 @@ def polish_sidebar(packed, palettes, glyphs, time_panel):
             x+=6
     def plaque(x,y,w,h):
         rect(x,y,x+w,y+h,1); rect(x+1,y+1,x+w-1,y+h-1,15)
-        for xx,yy in ((x,y),(x+w-1,y),(x,y+h-1),(x+w-1,y+h-1)): grid[yy][xx]=11
+        for xx,yy in ((x,y),(x+w-1,y),(x,y+h-1),(x+w-1,y+h-1)): grid[yy][xx]=12
     # Use the original in-game wordmark, not the menu-logo alpha crop whose
     # faint outer pixels produced a bright patch at the upper-right S.
     logo=Image.open(Path(__file__).resolve().parents[2]/'media/board.png').convert('RGB')
