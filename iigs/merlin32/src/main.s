@@ -73,7 +73,7 @@ FREEGEM  START
          jsr loadScene
          jsr loadHiscore
          jsr installTitlePal
-         jsr installScb
+         jsr installTitleScb
          jsr saveTitleMenu
          sep #$20
          longa off
@@ -2590,18 +2590,20 @@ crOut    rep #$20
          longa on
          rts
 
-* Match effects rotate through MATCH1-3 like the original.
+* Choose the match sample by depth within this cascade: first clear MATCH1,
+* first cascade MATCH2, and every later cascade MATCH3.
 matchSound anop
-         lda dSndRot
-         sta dSndTmp
-         inc dSndRot
-         lda dSndRot
-         cmp #3
-         bcc msPlay
-         stz dSndRot
-msPlay   lda dSndTmp
-         clc
-         adc #2
+         lda dCasc
+         cmp #1
+         beq msDepthOne
+         cmp #2
+         beq msDepthTwo
+         lda #4
+         bra msCascadePlay
+msDepthOne lda #2
+         bra msCascadePlay
+msDepthTwo lda #3
+msCascadePlay
          jsr playSound
          rts
 
@@ -3639,6 +3641,45 @@ itpLp    lda >titlepals,x
          bne itpLp
          rts
 
+installTitleScb anop
+         sep #$20
+         longa off
+         ldx #0
+itscLp   lda titleScb,x
+         sta >SCB,x
+         inx
+         cpx #200
+         bne itscLp
+         rep #$20
+         longa on
+         rts
+
+installHowtoScb anop
+         sep #$20
+         longa off
+         ldx #0
+ihscLp   lda howtoScb,x
+         sta >SCB,x
+         inx
+         cpx #200
+         bne ihscLp
+         rep #$20
+         longa on
+         rts
+
+installOptionsScb anop
+         sep #$20
+         longa off
+         ldx #0
+ioscLp   lda optionsScb,x
+         sta >SCB,x
+         inx
+         cpx #200
+         bne ioscLp
+         rep #$20
+         longa on
+         rts
+
 installHowtoPal anop
          ldx #0
 ihpLp    lda >howtopals,x
@@ -4253,11 +4294,12 @@ tiDone   jsr clockRead
          rts
 
 showTitleScreen anop
+         jsr pointerHide        ; restore the old scene's pixels before loading Title
          lda #nmTitle
          sta dPathPtr
          jsr loadScene
          jsr installTitlePal
-         jsr installScb
+         jsr installTitleScb
          jsr saveTitleMenu
          jsr titleDraw
          jsr shrOn
@@ -4307,6 +4349,7 @@ titleRedrawMenu anop
          bne trmGo
          rts                    ; nothing moved: leave the screen alone
 trmGo    inc dTrN
+         jsr pointerHide        ; the cached menu band may overlap the software cursor
          lda #1
          sta dTScale
          lda dMenuPrev
@@ -4415,11 +4458,12 @@ trBandW  lda dTitleSave,y
           rts
 
 showHowto anop
+         jsr pointerHide        ; never carry cursor-underlay bytes across a scene load
          lda #nmHowto
          sta dPathPtr
          jsr loadScene
          jsr installHowtoPal
-         jsr installScb
+         jsr installHowtoScb
          jsr howtoDraw
          jsr shrOn
          rts
@@ -4427,6 +4471,7 @@ showHowto anop
 * Time Trial streams SCENE4.RAW ; Endless streams SCENE4E.RAW, whose art has no
 * "Time left" header or panel.
 startGame anop
+         jsr pointerHide        ; restore menu pixels before replacing the full screen
          lda dMode
          beq sgTimeTrial
          lda #nmSceneE
@@ -4727,11 +4772,12 @@ htBack   rep #$20
 * Options follows VERA: Music/Sound values, fixed Fullscreen: On, Back,
 * then the two per-mode high-score rows.
 showOptions anop
+         jsr pointerHide        ; restore the old scene before loading Options
          lda #nmOptions
          sta dPathPtr
          jsr loadScene
          jsr installOptionsPal
-         jsr installScb
+         jsr installOptionsScb
          jsr saveTitleMenu
          jsr optionsDrawAll
          jsr shrOn
@@ -4739,6 +4785,7 @@ showOptions anop
 
 * Restore just the previous compact selection band, then draw the new row.
 optionsDraw anop
+         jsr pointerHide        ; restore any pointer under the row being redrawn
          rep #$20
          longa on
          lda #1
@@ -7781,7 +7828,6 @@ dBestW      dw 0
 * --- DOC audio (M4) ---------------------------------------------------------
 dSndIdx     dw 0             ; wave being loaded / id of the last trigger
 dSndTot     dw 0             ; total triggers (socket harness evidence)
-dSndRot     dw 0
 dMatchVoice dw 4            ; match voice selector; toggles between pairs 4/5 and 0/1
 dSndTmp     dw 0
 dSndBase    dw 0

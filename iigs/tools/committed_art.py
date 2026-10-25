@@ -279,7 +279,7 @@ def build_palettes(base_rgb, menu_rgb):
         row_wood = kmeans(wood_samples, 4) if wood_samples else (wood_deep, wood_dark, wood_mid, wood_light)
         p = [BLACK, WHITE] + gems + [row_wood[2], row_wood[0], row_wood[3], row_blue(y1), HINT_GREEN]
         if kind == "logo":
-            p[11] = row_blue(y0)               # top band still needs a blue backdrop
+            p[11] = (0, 68, 136)               # match the darker game-screen backdrop
             p[12] = LOGO_TONES[0]              # no rays on the logo band
             p += [LOGO_TONES[1], LOGO_TONES[2]]
         elif kind == "label":

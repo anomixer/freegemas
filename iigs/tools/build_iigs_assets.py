@@ -157,21 +157,6 @@ def kmeans(pixels, k, iters=14):
     return sorted(centers, key=lum)
 
 
-def quant(px, allowed, x, y):
-    """allowed: list of (rgb, slot). Straight nearest-colour pick.
-
-    Ordered (Bayer) dithering between the two nearest slots was tried on the
-    ART screens and measured worse than plain nearest-colour: the 13 k-means
-    centres per zone already sit close to the source colours, so toggling
-    between slot N and slot N+1 adds a visible cross-hatch over the smooth
-    gradient without buying any accuracy. Measured against the resized source
-    (mean channel error in RGB444 steps / high-frequency energy):
-        title  dither 0.19 steps, hf 4.08   ->  nearest 0.15 steps, hf 3.19
-        howto  dither 0.29 steps, hf 5.56   ->  nearest 0.22 steps, hf 4.15
-    Game artwork uses its own source-sampling palette fitter in shr_art.py."""
-    return min(allowed, key=lambda e: dist(px, e[0]))[1]
-
-
 # ---------------------------------------------------------------------------
 # Palette construction
 # ---------------------------------------------------------------------------
@@ -219,12 +204,16 @@ def screen_zones(scb):
 
 
 def build_art_screen(img, scb, gem_colours=None, gem_from_y=77, gem_mask=None,
-                     palette_source=None):
+                     palette_source=None, palette_y_pad=0, fit_rgb444=False,
+                     ordered_blue_dither=False, dither_mask=None):
     """Quantise a 320x200 RGB image to one 16-colour palette per SCB zone.
 
     Slots 0/1/2 are forced to black/white/amber on every zone so the runtime
     text blitter (slot 1) and the menu highlight (slot 2) look identical on any
-    scanline; the remaining 13 slots come from k-means over the zone's pixels.
+    scanline. Optional overlapping sample rows and RGB444 fitting smooth
+    dedicated art palettes. The title uses a wide palette sample across its
+    scanline bands so the background remains visually consistent around its
+    logo.
     Returns (packed 32000-byte screen, 12x16 RGB palette list)."""
     zones = screen_zones(scb)
     palettes = [None] * 12
@@ -233,12 +222,17 @@ def build_art_screen(img, scb, gem_colours=None, gem_from_y=77, gem_mask=None,
         if palettes[idx] is not None:
             continue
         source = palette_source or img
-        samples = [source.getpixel((x, y)) for y in range(y0, y1 + 1)
-                   for x in range(0, SCREEN_W, 4)]
+        sample_y0 = max(0, y0 - palette_y_pad)
+        sample_y1 = min(SCREEN_H - 1, y1 + palette_y_pad)
+        sample_step = 2 if fit_rgb444 else 4
+        samples = [source.getpixel((x, y)) for y in range(sample_y0, sample_y1 + 1)
+                   for x in range(0, SCREEN_W, sample_step)]
         jewel_zone=gem_colours is not None and y0>=gem_from_y
         count=6 if jewel_zone else 13
         centres = kmeans(samples, count, iters=10) if samples else [(0, 0, 0)] * count
         pal = [BLACK, WHITE, MENU_AMBER] + (list(gem_colours) if jewel_zone else []) + list(centres)
+        if fit_rgb444:
+            pal = [tuple((v >> 4) * 17 for v in colour) for colour in pal]
         palettes[idx] = pal
         allowed_by_zone[idx] = [(c, i) for i, c in enumerate(pal)
                                 if not jewel_zone or i < 3 or i >= 10]
@@ -248,19 +242,47 @@ def build_art_screen(img, scb, gem_colours=None, gem_from_y=77, gem_mask=None,
             allowed_by_zone[idx] = [(c, i) for i, c in enumerate(palettes[idx])]
 
     out = bytearray(SCREEN_W * SCREEN_H // 2)
+    indices = bytearray(SCREEN_W * SCREEN_H)
+    bayer4 = ((0, 8, 2, 10), (12, 4, 14, 6),
+              (3, 11, 1, 9), (15, 7, 13, 5))
     for y in range(SCREEN_H):
         allowed = allowed_by_zone[scb[y]]
-        row = y * BPR
-        for x in range(0, SCREEN_W, 2):
+        for x in range(SCREEN_W):
             def choices(px):
                 if (gem_colours is not None and gem_mask is not None and
                         y >= gem_from_y and gem_mask.getpixel((px, y))):
                     pal = palettes[scb[y]]
                     return [(c, i) for i, c in enumerate(pal) if i < 2 or 3 <= i <= 9]
                 return allowed
-            a = quant(img.getpixel((x, y)), choices(x), x, y)
-            b = quant(img.getpixel((x + 1, y)), choices(x + 1), x + 1, y)
-            out[row + x // 2] = (a << 4) | b
+
+            source_pixel = img.getpixel((x, y))
+            protected = dither_mask is not None and dither_mask.getpixel((x, y)) >= 128
+            is_blue = (not protected and source_pixel[2] > source_pixel[0] * 1.15 and
+                       source_pixel[2] > source_pixel[1] * 1.05)
+            if ordered_blue_dither and is_blue:
+                # A fixed Bayer pattern spreads palette steps evenly across
+                # every menu screen, avoiding the irregular clusters and
+                # silhouette breaks caused by error diffusion.
+                offset = (bayer4[y & 3][x & 3] - 7.5) * 2
+                adjusted = tuple(max(0, min(255, source_pixel[k] + offset))
+                                 for k in range(3))
+            else:
+                adjusted = source_pixel
+            allowed_pixel = choices(x)
+            if ordered_blue_dither and is_blue:
+                # UI inks are intentionally reserved for crisp text and
+                # selection markers; never let background error land on
+                # white, black, amber, or magenta logo clusters.
+                first_art_slot = 10 if gem_colours is not None and y >= gem_from_y else 3
+                allowed_pixel = [(colour, index) for colour, index in allowed_pixel
+                                 if index >= first_art_slot and colour[2] > colour[0] * 1.10
+                                 and colour[2] > colour[1] * 0.90]
+            slot = min(allowed_pixel, key=lambda entry: dist(adjusted, entry[0]))[1]
+            indices[y * SCREEN_W + x] = slot
+    for y in range(SCREEN_H):
+        row = y * BPR
+        for x in range(0, SCREEN_W, 2):
+            out[row + x // 2] = (indices[y * SCREEN_W + x] << 4) | indices[y * SCREEN_W + x + 1]
     return bytes(out), palettes
 
 
@@ -273,17 +295,29 @@ def art_palette_bytes(palettes):
 
 
 def build_title_image():
-    """Menu art with the Freegemas logo composited where StateMainMenu::draw
+    """Menu art and logo where StateMainMenu::draw
     puts it (x=86 of 800, y=0), scaled by the same 2/5 and 1/3 factors the rest
     of the port uses."""
     bg = Image.open(MEDIA / "stateMainMenu" / "mainMenuBackground.png").convert("RGB")
     bg = bg.resize((SCREEN_W, SCREEN_H), Image.LANCZOS)
     logo = Image.open(MEDIA / "stateMainMenu" / "mainMenuLogo.png").convert("RGBA")
+    # The source logo includes broad translucent bloom. At IIgs SHR resolution
+    # it quantises into a bright blotch above the final S, so keep only the
+    # stronger logo pixels before downsampling.
+    rgba = logo.load()
+    for y in range(logo.height):
+        for x in range(logo.width):
+            r, g, b, alpha = rgba[x, y]
+            if alpha < 128 or (r > 220 and g > 220 and b > 220 and alpha < 250):
+                rgba[x, y] = (r, g, b, 0)
     lw = max(1, round(logo.width * SCREEN_W / 800))
     lh = max(1, round(logo.height * SCREEN_H / 600))
     logo = logo.resize((lw, lh), Image.LANCZOS)
-    bg.paste(logo, (round(86 * SCREEN_W / 800), 0), logo)
-    return bg
+    logo_x = round(86 * SCREEN_W / 800)
+    bg.paste(logo, (logo_x, 0), logo)
+    protect = Image.new('L', (SCREEN_W, SCREEN_H), 0)
+    protect.paste(logo.getchannel('A').point(lambda alpha: 255 if alpha else 0), (logo_x, 0))
+    return bg, protect
 
 
 def build_options_image():
@@ -571,18 +605,38 @@ def main():
     assert swaps, "preview board must have at least one legal swap"
 
     scb = [next(i for i,(a,b,_kind) in enumerate(ZONES) if a<=y<=b) for y in range(SCREEN_H)]
+    # Title gets its own evenly-spaced scanline banks. The first five palettes
+    # cover the logo band; palettes 5..11 start at the falling-gem baseline so
+    # their fixed gem inks stay correct throughout the title animation.
+    title_edges = (0, 18, 36, 54, 72, 88, 104, 120, 136, 152, 168, 184, 200)
+    title_scb = [next(i for i, (a, b) in enumerate(zip(title_edges, title_edges[1:]))
+                      if a <= y < b) for y in range(SCREEN_H)]
+    howto_edges = (0, 20, 41, 57, 73, 89, 105, 121, 137, 153, 169, 185, 200)
+    howto_scb = [next(i for i, (a, b) in enumerate(zip(howto_edges, howto_edges[1:]))
+                      if a <= y < b) for y in range(SCREEN_H)]
+    options_scb = title_scb[:]
     sampled = build_sampled_game(MEDIA, GEM_NAMES, GLYPH, PREVIEW_BOARD)
     palettes = sampled['palettes']
     game_scb = sampled['scb']
 
     title_source=sampled if os.environ.get('IIGS_ART_STYLE','flat')=='flat' else committed_flat(PREVIEW_BOARD)
-    title_scene, title_pals = build_art_screen(build_title_image(), scb,title_source['palettes'][0][2:9])
+    menu_background = build_options_image()
+    title_img, title_logo_mask = build_title_image()
+    title_scene, title_pals = build_art_screen(
+        title_img, title_scb, title_source['palettes'][0][2:9],
+        gem_from_y=88, palette_y_pad=100, fit_rgb444=True, ordered_blue_dither=True,
+        dither_mask=title_logo_mask)
     howto_gem_colours = sample_howto_gem_colours(title_source)
     howto_img, howto_gem_mask, howto_palette_source = build_howto_image(title_source)
+    howto_dither_mask = howto_gem_mask.convert('L')
     howto_scene, howto_pals = build_art_screen(
-        howto_img, scb, howto_gem_colours, gem_from_y=41,
-        gem_mask=howto_gem_mask, palette_source=howto_palette_source)
-    options_scene, options_pals = build_art_screen(build_options_image(), scb)
+        howto_img, howto_scb, howto_gem_colours, gem_from_y=41,
+        gem_mask=howto_gem_mask, palette_source=howto_palette_source,
+        palette_y_pad=100, fit_rgb444=True, ordered_blue_dither=True,
+        dither_mask=howto_dither_mask)
+    options_scene, options_pals = build_art_screen(
+        menu_background, options_scb, palette_y_pad=100,
+        fit_rgb444=True, ordered_blue_dither=True)
     scene_tt, scene_end = sampled['packed']
     assert len(scene_tt) == SCREEN_W * SCREEN_H // 2 == len(scene_end)
     (GEN / "title_scene.bin").write_bytes(title_scene)
@@ -737,6 +791,9 @@ def main():
     add("titlepals", art_palette_bytes(title_pals))
     add("howtopals", art_palette_bytes(howto_pals))
     add("optionspals", art_palette_bytes(options_pals))
+    add("titleScb", bytes(title_scb))
+    add("howtoScb", bytes(howto_scb))
+    add("optionsScb", bytes(options_scb))
 
     # Emit the assembly with running byte offsets for the automation JSON.
     lines = [
@@ -777,17 +834,18 @@ def main():
 
     # Preview PNG from the packed scene, plus the runtime-drawn gems and HUD
     # digits so the tile record and mask encodings are verified visually.
-    def save_preview(path, packed, pals):
+    def save_preview(path, packed, pals, preview_scb=scb):
         im = Image.new("RGB", (SCREEN_W, SCREEN_H))
         for y in range(SCREEN_H):
-            pal = pals[scb[y]]
+            pal = pals[preview_scb[y]]
             for x in range(SCREEN_W):
                 b = packed[y * BPR + x // 2]
                 im.putpixel((x, y), pal[b >> 4 if x % 2 == 0 else b & 15])
         im.resize((SCREEN_W * 2, SCREEN_H * 2), Image.NEAREST).save(path)
 
-    save_preview(GEN / "preview_title.png", title_scene, title_pals)
-    save_preview(GEN / "preview_howto.png", howto_scene, howto_pals)
+    save_preview(GEN / "preview_title.png", title_scene, title_pals, title_scb)
+    save_preview(GEN / "preview_howto.png", howto_scene, howto_pals, howto_scb)
+    save_preview(GEN / "preview_options.png", options_scene, options_pals, options_scb)
 
     prev = sampled['preview']
     sampled['reference'].save(GEN / 'reference_tt.png')

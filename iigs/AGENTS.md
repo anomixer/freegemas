@@ -10,6 +10,8 @@
 - 現有功能含 Title、How to Play、Options、Time Trial、Endless、match/cascade、hint、reset、Game Over、滑鼠點選與相鄰寶石拖曳交換。鍵盤支援 WASD 與方向鍵。
 - 寶石採使用者核定的 2D 方塊像素風格。How to Play 使用與遊戲相同的 gem raster/palette。側欄 Show Hint 是發光燈泡，Reset Game 是圓形箭頭；其他場景可見的微小角落像素屬已知外觀，不要特別增加清理程式。
 - 棋盤木紋的來源位置與色調依 VERA 版對齊；使用分區 SHR palette 和離線色彩誤差擴散，動態消除仍從快取背景還原像素。
+- 遊戲畫面左上 Logo 帶的底色與下方背景同用深藍色，避免頂端形成較亮色帶。
+- Title、How to Play、Options 共用 VERA 風格的藍色光束背景；各自使用 12-bank SCB、跨 scanline 調色盤取樣、RGB444 色彩擬合及 4×4 Bayer 有序抖色，讓背景網點均勻，不要改回誤差擴散。Logo 和 How to Play 寶石區保護前景顏色；白色文字與琥珀選取色保留專用 palette slot。修改後檢視 `generated/preview_title.png`、`preview_howto.png`、`preview_options.png`。
 
 ## 目錄與產物
 
@@ -59,12 +61,13 @@ python ../tools/pack_disk.py --template ../build/gsos-template.2mg --image build
 - SHR framebuffer 線性別名為 `$012000`，320×200、每列 160 bytes、共 32,000 bytes；每 byte 兩個像素，左像素在 high nibble。SCB 在 `$019D00`、palette 在 `$019E00`。
 - 由 `build_iigs_assets.py` 產生場景、寶石和 palette；由 `hud_art.py` 產生側欄。修改生成器，不要只改 `generated/` 或 `build/` 輸出。
 - How to Play 的寶石與 palette 必須重用遊戲寶石 raster；改圖後檢查 `generated/preview_howto.png`。保留方塊紅寶石的平面像素風格及使用者核定的配色。
-- 一般遊戲動作只重畫受影響的 cell/damage rectangle，不要重畫整個 8×8 棋盤。落下和重置使用逐格動畫；游標、選取框及 hint 更新要清理原區域但避免覆寫新畫面。
+- 一般遊戲動作只重畫受影響的 cell/damage rectangle，不要重畫整個 8×8 棋盤。落下和重置使用逐格動畫；游標、選取框及 hint 更新要清理原區域但避免覆寫新畫面。整張場景載入或選單帶重畫前先呼叫 `pointerHide`，避免舊畫面的游標底圖殘留。
 - `generated/scene_*.bin` 等是產生物，需由來源重新產生並檢視 preview；Finder icon 由 `tools/build_app_icon.py` 產生，不要手改映像內 icon。
 
 ## 遊戲與輸入約定
 
 - 規則、計分與流程以 repo 根目錄原作 C++ 為準。合法交換才消除；每組分數為寶石數 × 5 × cascade 倍率，交叉消除可同時計入兩組。
+- 消除音效依單局連鎖深度播放：首次消除 MATCH1，第一段連鎖 MATCH2，第二段及之後連鎖皆 MATCH3；新的一步重新從 MATCH1 開始。
 - Time Trial 為 120 秒；時間到仍完成正在進行的交換與 cascade 再進 Game Over。Endless 無倒數；無合法交換時進 Game Over。Time Trial 無解時重生棋盤但保留分數與剩餘時間。
 - Hint 只標示合法移動，不更動選取狀態；合法交換、reset、Game Over 清除提示。Reset 清空本局分數並重設倒數／棋盤。
 - WASD 和方向鍵共用移動流程；Space 選取後移到相鄰格再 Space 交換。滑鼠點選與按住拖到相鄰寶石都走相同交換流程。H 提示、R 重置、Esc 離開遊戲或回標題。

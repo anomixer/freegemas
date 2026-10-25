@@ -99,9 +99,12 @@
   "txtglyphs": 5009,
   "titlepals": 5737,
   "howtopals": 6121,
-  "optionspals": 6505
+  "optionspals": 6505,
+  "titleScb": 6889,
+  "howtoScb": 7089,
+  "optionsScb": 7289
  },
- "section_total": 6889,
+ "section_total": 7489,
  "preview_board": [
   5,
   4,
