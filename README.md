@@ -82,3 +82,16 @@ Now ``freegemas.vpk`` can be tranfered and installed on Vita.
 
 The music in the game is [Easy Lemon by Kevin MacLeod](https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1200076)
 Licensed under [Creative Commons: By Attribution 3.0](https://creativecommons.org/licenses/by/3.0/)
+
+
+## Apple IIGS port
+
+An Apple IIGS port is maintained in [`iigs/`](iigs/). Read [`iigs/AGENTS.md`](iigs/AGENTS.md) for the current implementation notes and build instructions. The 320x200 Super Hi-Res game uses the same flat gem artwork in gameplay and the How to Play diagrams. The Options screen credits the IIGS port to anomixer and uses the larger VERA-aligned menu text.
+
+The IIGS Finder icon uses the game's square red gem. The build streams its DOC music through alternating 4 KiB wave tables. Table changes are synchronized to the DOC end interrupt, while PCM preparation stays in the foreground. Sound effects use separate DOC oscillator pairs. The current audio IRQ build was tested in GSplus: after a continuous capture, the user played a full round and reported no music skips, including during gameplay. Exit with the callback installed, other emulators, and real IIGS hardware still need verification. See [`iigs/AGENTS.md`](iigs/AGENTS.md) for implementation details and the latest validation status.
+
+### Apple IIgs hardware requirements
+
+- Apple IIgs or a compatible emulator, GS/OS, and working Ensoniq DOC audio. The game uses 320x200 Super Hi-Res graphics.
+- **Memory: 2 MB total is the minimum recommended target; 4 MB or more is preferred.** The 1,413,400-byte music track (about 1.35 MiB) is loaded into a locked RAM handle when music starts. GS/OS, the game, and its graphics banks also need memory, so a 2 MB system may not have enough free RAM to cache the whole song. Apple’s ROM 03 IIgs shipped with 1 MB and supports RAM expansion; see the [IIgs specifications](https://www.savagetaylor.com/TIL/TIL07889.pdf).
+- If the full-song cache cannot be allocated, the game falls back to HD streaming. This fallback was exercised in GSSquared with the RAM cache deliberately disabled: a roughly 160-second audio capture had no clipping and the game reported no music read errors. GSSquared cannot model the requested 1.25 MB ROM 01 configuration through its profile, so this verifies the fallback path but does not replace testing on low-memory hardware.

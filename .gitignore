@@ -18,6 +18,7 @@
 # Executables
 *.exe
 !vera/llvm/tools/cadius.exe
+!iigs/cadius.exe
 *.out
 *.app
 
@@ -205,3 +206,10 @@ UpgradeLog*.htm
 
 # Microsoft Fakes
 FakesAssemblies/
+
+# Apple IIGS port: local build noise
+__pycache__/
+*.pyc
+*_Output_Error.txt
+iigs/merlin32/src/main_mtest.s
+iigs/merlin32/build/

@@ -1,1 +1,19 @@
 vera/generated/*.rle binary
+
+# Keep the IIGS port byte-stable across checkouts: its docs and 65816 sources are
+# LF-only (iigs/AGENTS.md has a hard 64 KiB budget, so CRLF must never creep in).
+iigs/AGENTS.md text eol=lf
+iigs/HANDOFF.md text eol=lf
+iigs/merlin32/src/*.s text eol=lf
+iigs/merlin32/Makefile text eol=lf
+iigs/Makefile text eol=lf
+iigs/CMakeLists.txt text eol=lf
+iigs/tools/*.py text eol=lf
+*.2mg binary
+*.po binary
+*.bin binary
+*.PCM binary
+*.RAW binary
+*.png binary
+iigs/tools/emu/* text eol=lf
+.gitignore text eol=lf
