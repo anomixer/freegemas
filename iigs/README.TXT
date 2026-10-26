@@ -1,5 +1,5 @@
-FREEGEMAS - APPLE IIGS EDITION
-=============================
+FREEGEMAS - APPLE IIGS EDITION V1.0
+===================================
 
 HOW TO PLAY
 -----------

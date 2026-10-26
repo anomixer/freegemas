@@ -84,9 +84,21 @@ The music in the game is [Easy Lemon by Kevin MacLeod](https://incompetech.com/m
 Licensed under [Creative Commons: By Attribution 3.0](https://creativecommons.org/licenses/by/3.0/)
 
 
+## Apple //e VERA port
+
+An Apple //e VERA port is maintained in [`vera/`](vera/). Read [`vera/README.md`](vera/README.md) and [`vera/AGENTS.md`](vera/AGENTS.md) for build instructions and technical details.
+
+- **Platform & Engine**: Compiled to 65C02 native code using the [LLVM-MOS SDK](https://github.com/llvm-mos/llvm-mos-sdk). Uses an 800 KB ProDOS HDV disk image ([`vera/freegemas.hdv`](vera/freegemas.hdv)).
+- **Graphics**: 320×240 8bpp bitmap mode with persistent VERA hardware gem sprites and top-edge masking.
+- **Audio & Features**: Background music and sound effects routed through VERA PSG; segmented loader for title, game, instructions, and options; full keyboard and mouse control support.
+- **Requirements**: 128 KB Apple //e with a VERA card in Slot 2 or Slot 4, tested in VERA-enabled AppleWin and on real hardware (VeraSD).
+
+
 ## Apple IIGS port
 
-An Apple IIGS port is maintained in [`iigs/`](iigs/). Read [`iigs/AGENTS.md`](iigs/AGENTS.md) for the current implementation notes and build instructions. The 320x200 Super Hi-Res game uses the same flat gem artwork in gameplay and the How to Play diagrams. The gameplay board uses source-aligned wood shading with its color and contrast tuned to the VERA port; the flat gem artwork remains unchanged. Title, How to Play, and Options share the VERA-inspired blue ray backdrop, with screen-specific 12-bank palettes and an even 4×4 Bayer dither pattern. The How to Play gems and crisp menu artwork retain their dedicated colors. The Options screen credits the IIGS port to anomixer and uses the larger VERA-aligned menu text.
+An Apple IIGS port is maintained in [`iigs/`](iigs/). Read [`iigs/AGENTS.md`](iigs/AGENTS.md) for the current implementation notes and build instructions. The 320x200 Super Hi-Res game uses the same flat gem artwork in gameplay and the How to Play diagrams. The gameplay board uses source-aligned wood shading with its color and contrast tuned to the VERA port; the flat gem artwork remains unchanged. The 8-column board is framed with symmetric 2px black borders and 12px outer margins (`x=96..307`). Title, How to Play, and Options share the VERA-inspired blue ray backdrop, with screen-specific 12-bank palettes and an even 4×4 Bayer dither pattern. The How to Play gems and crisp menu artwork retain their dedicated colors. The Options screen credits the IIGS port to anomixer and uses the larger VERA-aligned menu text.
+
+The bootable 2MG disk image is built at [`iigs/merlin32/build/freegemas.2mg`](iigs/merlin32/build/freegemas.2mg), including `README.TXT` V1.0.
 
 The IIGS Finder icon uses the game's square red gem. The build streams its DOC music through alternating 4 KiB wave tables. Table changes are synchronized to the DOC end interrupt, while PCM preparation stays in the foreground. Sound effects use separate DOC oscillator pairs. The current audio IRQ build was tested in GSplus: after a continuous capture, the user played a full round and reported no music skips, including during gameplay. Exit with the callback installed, other emulators, and real IIGS hardware still need verification. See [`iigs/AGENTS.md`](iigs/AGENTS.md) for implementation details and the latest validation status.
 

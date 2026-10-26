@@ -9,7 +9,7 @@
 - 遊戲資料、音效、音樂與 `HISCORE.DAT` 放在 `/DATA`；磁碟根目錄保留 `FREEGEM.S16`、`README.TXT` 和系統檔案。GS/OS 透過檔案呼叫讀取資產。
 - 現有功能含 Title、How to Play、Options、Time Trial、Endless、match/cascade、hint、reset、Game Over、滑鼠點選與相鄰寶石拖曳交換。鍵盤支援 WASD 與方向鍵。
 - 寶石採使用者核定的 2D 方塊像素風格。How to Play 使用與遊戲相同的 gem raster/palette。側欄 Show Hint 是發光燈泡，Reset Game 是圓形箭頭；其他場景可見的微小角落像素屬已知外觀，不要特別增加清理程式。
-- 棋盤木紋的來源位置與色調依 VERA 版對齊；使用分區 SHR palette 和離線色彩誤差擴散，動態消除仍從快取背景還原像素。
+- 棋盤木紋寬度為 212 px（$x=96\sim 307$），包含 8 列完整的 26 px 格子與左右各 2 px 黑框，左右兩側藍色背景邊界均勻對稱（各留 12 px）；木紋來源位置與色調依 VERA 版對齊，使用分區 SHR palette 和離線色彩誤差擴散，動態消除仍由 `dTitleSave` 從快取背景還原像素（$x=96\sim 303$）。
 - 遊戲畫面左上 Logo 帶的底色與下方背景同用深藍色，避免頂端形成較亮色帶。
 - Title、How to Play、Options 共用 VERA 風格的藍色光束背景；各自使用 12-bank SCB、跨 scanline 調色盤取樣、RGB444 色彩擬合及 4×4 Bayer 有序抖色，讓背景網點均勻，不要改回誤差擴散。Logo 和 How to Play 寶石區保護前景顏色；白色文字與琥珀選取色保留專用 palette slot。修改後檢視 `generated/preview_title.png`、`preview_howto.png`、`preview_options.png`。
 

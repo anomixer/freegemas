@@ -382,18 +382,19 @@ def build_scene(ctx, time_panel):
     # Board: retain the source wood and cell shading. The cached scene is also
     # the exact restoration image used after gem moves, so textured cells need
     # no separate runtime redraw path.
-    errors = [[0.0, 0.0, 0.0] for _ in range(BOARD_W + 2)]
-    next_errors = [[0.0, 0.0, 0.0] for _ in range(BOARD_W + 2)]
+    BOARD_EXT_W = 212
+    errors = [[0.0, 0.0, 0.0] for _ in range(BOARD_EXT_W + 2)]
+    next_errors = [[0.0, 0.0, 0.0] for _ in range(BOARD_EXT_W + 2)]
     previous_bank = -1
     for y in range(BOARD_Y, BOARD_Y + BOARD_H):
         if scb[y] != previous_bank:
-            errors = [[0.0, 0.0, 0.0] for _ in range(BOARD_W + 2)]
-            next_errors = [[0.0, 0.0, 0.0] for _ in range(BOARD_W + 2)]
+            errors = [[0.0, 0.0, 0.0] for _ in range(BOARD_EXT_W + 2)]
+            next_errors = [[0.0, 0.0, 0.0] for _ in range(BOARD_EXT_W + 2)]
             previous_bank = scb[y]
         gy = y - BOARD_Y
-        for x in range(BOARD_X, BOARD_X + BOARD_W):
+        for x in range(BOARD_X, BOARD_X + BOARD_EXT_W):
             gx = x - BOARD_X
-            if gx < 2 or gx >= BOARD_W - 2 or gy < 2 or gy >= BOARD_H - 2:
+            if gx < 2 or gx >= BOARD_EXT_W - 2 or gy < 2 or gy >= BOARD_H - 2:
                 grid[y][x] = 0
             else:
                 if ZONE_KIND[y] == "logo":
@@ -415,7 +416,7 @@ def build_scene(ctx, time_panel):
                         next_errors[pos - 1][k] += error[k] * 3 / 16
                         next_errors[pos][k] += error[k] * 5 / 16
                         next_errors[pos + 1][k] += error[k] / 16
-        errors, next_errors = next_errors, [[0.0, 0.0, 0.0] for _ in range(BOARD_W + 2)]
+        errors, next_errors = next_errors, [[0.0, 0.0, 0.0] for _ in range(BOARD_EXT_W + 2)]
 
     # Left HUD column.
     draw_text_grid(grid, "Score", PANEL_X + (PANEL_W - text_w("Score")) // 2, 30, LABEL_SLOT)

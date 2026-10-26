@@ -51,8 +51,8 @@ def polish_sidebar(packed, palettes, glyphs, time_panel):
     grid=[[(packed[y*160+x//2]>>(4 if x%2==0 else 0))&15 for x in range(320)] for y in range(200)]
     for y,row in enumerate(grid):
         bg = 11 if y < 28 else 12
-        row[:96]=[bg]*96; row[304:]=[bg]*16
-        if y<14 or y>=190: row[96:304]=[11 if y < 28 else 12]*208
+        row[:96]=[bg]*96; row[308:]=[bg]*12
+        if y<14 or y>=190: row[96:308]=[11 if y < 28 else 12]*212
     def rect(x0,y0,x1,y1,colour):
         for y in range(y0,y1): grid[y][x0:x1]=[colour]*(x1-x0)
     def text(value,x,y,colour=1,scale_y=1):
@@ -103,5 +103,5 @@ def polish_sidebar(packed, palettes, glyphs, time_panel):
         width=len(caption)*6-1
         text(caption,21+(62-width)//2,y+3)
     data=bytes((grid[y][x]<<4)|grid[y][x+1] for y in range(200) for x in range(0,320,2))
-    assert all(data[y*160+48:y*160+152]==packed[y*160+48:y*160+152] for y in range(14,190))
+    assert all(data[y*160+48:y*160+154]==packed[y*160+48:y*160+154] for y in range(14,190))
     return data
