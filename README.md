@@ -88,15 +88,17 @@ Licensed under [Creative Commons: By Attribution 3.0](https://creativecommons.or
 
 This fork add support to run freegemas on WebAssembly (WASM), Apple //e VERA, and Apple IIgs platforms.
 
-## WebAssembly (WASM) - Play in Browser [TRY HERE](https://anomixer.github.io/freegemas/)
+---
+
+## WebAssembly (WASM) port - 👉 [PLAY HERE](https://anomixer.github.io/freegemas/)
 
 A WebAssembly port is maintained in [`wasm/`](wasm/). It compiles the native C++ SDL2 game directly to WebAssembly using [Emscripten](https://emscripten.org/), running at 60 FPS in any modern web browser with WebGL and Web Audio API.
 
 Read [`wasm/README.md`](wasm/README.md) and [`wasm/README-tw.md`](wasm/README-tw.md) for architecture and local build instructions. Automated deployment to GitHub Pages is supported via [`.github/workflows/deploy-wasm.yml`](.github/workflows/deploy-wasm.yml).
 
+---
 
-
-## Apple //e VERA port [TRY HERE](https://apple2ts.com?slot2=vera&tab=vera#https://raw.githubusercontent.com/anomixer/freegemas/master/vera/freegemas.hdv)
+## Apple //e VERA port - 👉 [PLAY HERE](https://apple2ts.com?slot2=vera&tab=vera#https://raw.githubusercontent.com/anomixer/freegemas/master/vera/freegemas.hdv)
 
 An Apple //e VERA port is maintained in [`vera/`](vera/). Read [`vera/README.md`](vera/README.md) and [`vera/AGENTS.md`](vera/AGENTS.md) for build instructions and technical details.
 
@@ -105,8 +107,9 @@ An Apple //e VERA port is maintained in [`vera/`](vera/). Read [`vera/README.md`
 - **Audio & Features**: Background music and sound effects routed through VERA PSG; segmented loader for title, game, instructions, and options; full keyboard and mouse control support.
 - **Requirements**: 128 KB Apple //e with a VERA card in Slot 2 or Slot 4, tested in VERA-enabled AppleWin and on real hardware (VeraSD).
 
+---
 
-## Apple IIGS port
+## Apple IIGS port - 👉 [PLAY HERE](https://a2gsemu-ia.pages.dev/?lang=en&game=https%3A%2F%2Fgithub.com%2Fanomixer%2Ffreegemas)
 
 An Apple IIGS port is maintained in [`iigs/`](iigs/). Read [`iigs/AGENTS.md`](iigs/AGENTS.md) for the current implementation notes and build instructions. The 320x200 Super Hi-Res game uses the same flat gem artwork in gameplay and the How to Play diagrams. The gameplay board uses source-aligned wood shading with its color and contrast tuned to the VERA port; the flat gem artwork remains unchanged. The 8-column board is framed with symmetric 2px black borders and 12px outer margins (`x=96..307`). Title, How to Play, and Options share the VERA-inspired blue ray backdrop, with screen-specific 12-bank palettes and an even 4×4 Bayer dither pattern. The How to Play gems and crisp menu artwork retain their dedicated colors. The Options screen credits the IIGS port to anomixer and uses the larger VERA-aligned menu text.
 
