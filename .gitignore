@@ -19,6 +19,7 @@
 *.exe
 !vera/llvm/tools/cadius.exe
 !iigs/cadius.exe
+!iigs/Merlin32.exe
 *.out
 *.app
 
@@ -212,7 +213,16 @@ __pycache__/
 *.pyc
 *_Output_Error.txt
 iigs/merlin32/src/main_mtest.s
-iigs/merlin32/build/
+!iigs/build/
+iigs/build/*
+!iigs/build/gsos-template.2mg
+!iigs/merlin32/build/
+iigs/merlin32/build/*
+!iigs/merlin32/build/freegemas.2mg
+!iigs/merlin32/build/FREEGEM.S16
+!iigs/merlin32/build/FREEGEMAS.ICONS
+!iigs/merlin32/build/FREEGEMAS-ICON.png
+!iigs/merlin32/build/README.TXT
 
 # WebAssembly build artifacts
 wasm/build/

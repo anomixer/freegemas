@@ -14,11 +14,11 @@ The bootable 2MG disk image is built at [`merlin32/build/freegemas.2mg`](merlin3
 ## Requirements and build
 
 ### Prerequisites
-- [Merlin32](http://www.brutaldeluxe.fr/products/crossdevtools/merlin/) 1.2 beta 2 or later (`C:\dev\Merlin32.exe`)
+- [Merlin32](http://www.brutaldeluxe.fr/products/crossdevtools/merlin/) 1.2 beta 2 or later (bundled as `iigs/Merlin32.exe`)
 - Python 3 with [Pillow](https://python-pillow.org/)
 - `ffmpeg` (for DOC audio conversion from original `media/*.ogg`)
-- Cadius 1.4.5 (bundled as `cadius.exe`)
-- GS/OS base template disk `iigs/build/gsos-template.2mg`
+- Cadius 1.4.5 (bundled as `iigs/cadius.exe`)
+- GS/OS base template disk (bundled as `iigs/build/gsos-template.2mg`)
 
 ### Build instructions
 
@@ -33,7 +33,7 @@ python iigs/tools/build_iigs_sounds.py iigs/merlin32/build
 
 # 3. Assemble and pack the 2MG bootable disk
 cd iigs/merlin32
-C:\dev\Merlin32.exe macros src/main.s
+..\Merlin32.exe macros src/main.s
 make disk
 ```
 

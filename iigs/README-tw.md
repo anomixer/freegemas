@@ -14,11 +14,11 @@
 ## 建置與需求
 
 ### 前置環境
-- [Merlin32](http://www.brutaldeluxe.fr/products/crossdevtools/merlin/) 1.2 beta 2 或以上版本（`C:\dev\Merlin32.exe`）
+- [Merlin32](http://www.brutaldeluxe.fr/products/crossdevtools/merlin/) 1.2 beta 2 或以上版本（隨附於 `iigs/Merlin32.exe`）
 - Python 3 與 [Pillow](https://python-pillow.org/)
 - `ffmpeg`（用於將原版 `media/*.ogg` 轉換為 DOC PCM 格式）
 - Cadius 1.4.5（隨附於 `iigs/cadius.exe`）
-- GS/OS 基礎映像範本 `iigs/build/gsos-template.2mg`
+- GS/OS 基礎映像範本（隨附於 `iigs/build/gsos-template.2mg`）
 
 ### 建置指令
 
@@ -33,7 +33,7 @@ python iigs/tools/build_iigs_sounds.py iigs/merlin32/build
 
 # 3. 組譯程式碼並打包為 2MG 開機磁碟
 cd iigs/merlin32
-C:\dev\Merlin32.exe macros src/main.s
+..\Merlin32.exe macros src/main.s
 make disk
 ```
 

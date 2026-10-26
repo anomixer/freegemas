@@ -10,7 +10,7 @@
 # Override paths on the command line, e.g.
 #   make MERLIN32=C:/dev/Merlin32.exe TEMPLATE=../build/gsos-template.2mg
 
-MERLIN32 ?= C:/dev/Merlin32.exe
+MERLIN32 ?= ../Merlin32.exe
 # Cadius ships with the repo and does the whole pack (volume rename, file adds,
 # per-file ProDOS type/aux).  See tools/pack_cadius.py; no cp2/CiderPress needed.
 CADIUS   ?= ../cadius.exe
