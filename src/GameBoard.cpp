@@ -496,22 +496,28 @@ void GameBoard::buttonDown(SDL_Keycode button)
 {
     switch(button) {
     case SDLK_LEFT:
+    case SDLK_a:
         mGame->getGameSounds()->playSoundSelect();
         moveSelector(-1, 0);
         break;
     case SDLK_RIGHT:
+    case SDLK_d:
         mGame->getGameSounds()->playSoundSelect();
         moveSelector(1, 0);
         break;
     case SDLK_UP:
+    case SDLK_w:
         mGame->getGameSounds()->playSoundSelect();
         moveSelector(0, -1);
         break;
     case SDLK_DOWN:
+    case SDLK_s:
         mGame->getGameSounds()->playSoundSelect();
         moveSelector(0, 1);
         break;
     case SDLK_SPACE:
+    case SDLK_RETURN:
+    case SDLK_KP_ENTER:
         selectGem();
         break;
     }

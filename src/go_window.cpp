@@ -90,98 +90,117 @@ GoSDL::Window::~Window()
 	SDL_Quit();
 }
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+
+static void emscriptenMainLoop(void *arg)
+{
+    auto *win = static_cast<GoSDL::Window *>(arg);
+    win->doFrame();
+}
+#endif
+
+void GoSDL::Window::doFrame()
+{
+    SDL_Event e;
+    while (SDL_PollEvent(&e))
+    {
+        switch (e.type)
+        {
+        case SDL_APP_WILLENTERBACKGROUND:
+            mApplicationActive = false;
+            break;
+
+        case SDL_APP_WILLENTERFOREGROUND:
+            mApplicationActive = true;
+            break;
+
+        case SDL_QUIT:
+            mShouldRun = false;
+#ifdef __EMSCRIPTEN__
+            emscripten_cancel_main_loop();
+#endif
+            return;
+
+        case SDL_KEYDOWN:
+            mMouseActive = false;
+            buttonDown(e.key.keysym.sym);
+            break;
+
+        case SDL_KEYUP:
+            buttonUp(e.key.keysym.sym);
+            break;
+
+        case SDL_MOUSEMOTION:
+            mMouseActive = true;
+            mMouseX = e.motion.x;
+            mMouseY = e.motion.y;
+            break;
+
+        case SDL_MOUSEBUTTONDOWN:
+            mMouseActive = true;
+            mouseButtonDown(e.button.button);
+            break;
+
+        case SDL_MOUSEBUTTONUP:
+            mouseButtonUp(e.button.button);
+            break;
+
+        case SDL_CONTROLLERBUTTONDOWN:
+            mMouseActive = false;
+            controllerButtonDown(e.cbutton.button);
+            break;
+
+        case SDL_CONTROLLERDEVICEADDED:
+            openGameController(e.cdevice.which);
+            break;
+
+        case SDL_CONTROLLERDEVICEREMOVED:
+            closeDisconnectedGameControllers();
+            break;
+        }
+    }
+
+    if (mApplicationActive)
+    {
+        Uint32 gameCycleTicks = SDL_GetTicks();
+
+        gameLoop();
+
+#ifndef __EMSCRIPTEN__
+        // Limit to framerate (browser handles this via requestAnimationFrame in WebAssembly)
+        gameCycleTicks = SDL_GetTicks() - gameCycleTicks;
+        if (gameCycleTicks < mUpdateInterval)
+        {
+            SDL_Delay(mUpdateInterval - gameCycleTicks);
+        }
+#endif
+    }
+    else
+    {
+#ifndef __EMSCRIPTEN__
+        SDL_WaitEvent(nullptr);
+#endif
+    }
+}
+
 void GoSDL::Window::show()
 {
-    // To poll events
-    SDL_Event e;
-
     // Show the window
     SDL_ShowWindow(mWindow);
 
     mShouldRun = true;
     mApplicationActive = true;
 
+#ifdef __EMSCRIPTEN__
+    emscripten_set_main_loop_arg(emscriptenMainLoop, this, 0, 1);
+#else
     // Main game loop
-    while (mShouldRun) {
-
-        // Event loop
-        while (SDL_PollEvent (&e))
-        {
-            switch (e.type)
-            {
-            case SDL_APP_WILLENTERBACKGROUND:
-                mApplicationActive = false;
-                break;
-
-            case SDL_APP_WILLENTERFOREGROUND:
-                mApplicationActive = true;
-                break;
-
-            case SDL_QUIT:
-                // Yes, goto: http://stackoverflow.com/a/1257776/276451
-                goto exit;
-                break;
-
-            case SDL_KEYDOWN:
-                mMouseActive = false;
-                buttonDown(e.key.keysym.sym);
-                break;
-
-            case SDL_KEYUP:
-                buttonUp(e.key.keysym.sym);
-                break;
-
-            case SDL_MOUSEMOTION:
-                mMouseActive = true;
-                mMouseX = e.motion.x;
-                mMouseY = e.motion.y;
-                break;
-
-            case SDL_MOUSEBUTTONDOWN:
-                mMouseActive = true;
-                mouseButtonDown(e.button.button);
-                break;
-
-            case SDL_MOUSEBUTTONUP:
-                mouseButtonUp(e.button.button);
-                break;
-
-            case SDL_CONTROLLERBUTTONDOWN:
-                mMouseActive = false;
-                controllerButtonDown(e.cbutton.button);
-                break;
-
-            case SDL_CONTROLLERDEVICEADDED:
-                openGameController(e.cdevice.which);
-                break;
-
-            case SDL_CONTROLLERDEVICEREMOVED:
-                closeDisconnectedGameControllers();
-                break;
-            }
-        }
-
-        if (mApplicationActive)
-        {
-            Uint32 gameCycleTicks = SDL_GetTicks();
-
-            gameLoop();
-
-            // Limit to framerate
-            gameCycleTicks = SDL_GetTicks() - gameCycleTicks;
-            if (gameCycleTicks < mUpdateInterval)
-            {
-                SDL_Delay(mUpdateInterval - gameCycleTicks);
-            }
-        }
-        else
-        {
-            SDL_WaitEvent(nullptr);
-        }
+    while (mShouldRun)
+    {
+        doFrame();
     }
-    // Exit point for goto within switch
-exit:
-    ;
+#endif
 }
 
 void GoSDL::Window::gameLoop()
@@ -236,7 +255,15 @@ void GoSDL::Window::gameLoop()
 
 void GoSDL::Window::close()
 {
+#ifdef __EMSCRIPTEN__
+    EM_ASM({
+        if (window.confirmExitGame) {
+            window.confirmExitGame();
+        }
+    });
+#else
     mShouldRun = false;
+#endif
 }
 
 void GoSDL::Window::enqueueDraw(SDL_Texture * texture, SDL_Rect destRect, double angle, float z, Uint8 alpha, SDL_Color color)
@@ -288,9 +315,25 @@ void GoSDL::Window::closeAllGameControllers() {
 
 void GoSDL::Window::setFullscreen(bool value)
 {
+#ifdef __EMSCRIPTEN__
+    if (value) {
+        EM_ASM({
+            if (window.setBrowserFullscreen) {
+                window.setBrowserFullscreen(true);
+            }
+        });
+    } else {
+        EM_ASM({
+            if (window.setBrowserFullscreen) {
+                window.setBrowserFullscreen(false);
+            }
+        });
+    }
+#else
     if (value) {
         SDL_SetWindowFullscreen(mWindow, SDL_WINDOW_FULLSCREEN);
     } else {
         SDL_SetWindowFullscreen(mWindow, 0);
     }
+#endif
 }

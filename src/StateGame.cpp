@@ -63,6 +63,11 @@ void StateGame::buttonDown(SDL_Keycode button)
         showHint();
     }
     
+    else if (button == SDLK_r)
+    {
+        resetGame();
+    }
+    
     else {
         mGameBoard.buttonDown(button);
     }

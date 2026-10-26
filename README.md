@@ -78,6 +78,13 @@ Do an out-of-source compilation:
 
 Now ``freegemas.vpk`` can be tranfered and installed on Vita.
 
+## WebAssembly (WASM) - Play in Browser
+
+A WebAssembly port is maintained in [`wasm/`](wasm/). It compiles the native C++ SDL2 game directly to WebAssembly using [Emscripten](https://emscripten.org/), running at 60 FPS in any modern web browser with WebGL and Web Audio API.
+
+Read [`wasm/README.md`](wasm/README.md) and [`wasm/README-tw.md`](wasm/README-tw.md) for architecture and local build instructions. Automated deployment to GitHub Pages is supported via [`.github/workflows/deploy-wasm.yml`](.github/workflows/deploy-wasm.yml).
+
+
 ## Music licensing
 
 The music in the game is [Easy Lemon by Kevin MacLeod](https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1200076)

@@ -135,10 +135,12 @@ void StateMainMenu::buttonDown(SDL_Keycode button)
             break;
 
         case SDLK_DOWN:
+        case SDLK_s:
             moveDown();
             break;
 
         case SDLK_UP:
+        case SDLK_w:
             moveUp();
             break;
 

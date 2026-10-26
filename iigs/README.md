@@ -2,6 +2,11 @@
 
 English | [繁體中文](README-tw.md)
 
+<p align="center">
+  <img src="screenshots/screenshot1.png" alt="Freegemas Apple IIGS Title Screen" width="380">
+  <img src="screenshots/screenshot2.png" alt="Freegemas Apple IIGS Gameplay" width="380">
+</p>
+
 An Apple IIGS port of Freegemas, written in 65816 assembly using Merlin32 and targeting GS/OS (S16 executable). Graphics utilize 320×200 Super Hi-Res (4bpp) with per-scanline 16-color palettes. The gameplay board features 8 columns with symmetric 2px borders, source-aligned wood texture, and authentic 2D square pixel-art gems. Audio uses the Ensoniq 5503 DOC chip for streamed music and native sound effects.
 
 The bootable 2MG disk image is built at [`merlin32/build/freegemas.2mg`](merlin32/build/freegemas.2mg).

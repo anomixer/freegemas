@@ -6,6 +6,10 @@
 
 #include "go_font.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #include <cmath>
 #include <tuple>
 
@@ -24,6 +28,12 @@ StateOptions::StateOptions(Game * p) : State(p)
     lDEBUG << Log::CON("StateOptions");
 
     mOptions.loadResources();
+#ifdef __EMSCRIPTEN__
+    int isFs = EM_ASM_INT({
+        return (document.fullscreenElement || document.webkitFullscreenElement) ? 1 : 0;
+    });
+    mOptions.setFullscreenEnabled(isFs != 0);
+#endif
 
     // Init background image
     mImgBackground.setWindow(p);
@@ -96,10 +106,12 @@ void StateOptions::buttonDown(SDL_Keycode button)
             break;
 
         case SDLK_DOWN:
+        case SDLK_s:
             moveDown();
             break;
 
         case SDLK_UP:
+        case SDLK_w:
             moveUp();
             break;
 

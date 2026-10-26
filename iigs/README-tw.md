@@ -2,6 +2,11 @@
 
 [English](README.md) | 繁體中文
 
+<p align="center">
+  <img src="screenshots/screenshot1.png" alt="Freegemas Apple IIGS 標題選單" width="380">
+  <img src="screenshots/screenshot2.png" alt="Freegemas Apple IIGS 遊戲畫面" width="380">
+</p>
+
 這是 Freegemas 的 Apple IIGS 移植版。遊戲以 65816 原生組語撰寫（使用 Merlin32），運行於 GS/OS 環境（S16 可執行檔）。畫面使用 320×200 Super Hi-Res（4bpp）與逐行 16 色調色盤。棋盤採用完整 8 列對稱邊界、對齊原作的木質紋理，以及使用者核定之精緻 2D 方塊像素寶石。音訊透過 Ensoniq 5503 DOC 晶片提供雙緩衝背景音樂與原生 PCM 音效。
 
 可開機測試的 2MG 磁碟映像建置於 [`merlin32/build/freegemas.2mg`](merlin32/build/freegemas.2mg)。

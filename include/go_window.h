@@ -50,6 +50,11 @@ namespace GoSDL {
         void close();
 
         /**
+         * @brief Process one single frame (event handling, logic update, drawing)
+         */
+        void doFrame();
+
+        /**
          * @brief This is where the logic should go.
          * @details It gets called on every frame and has to be overloaded.
          */

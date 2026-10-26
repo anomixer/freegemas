@@ -213,3 +213,7 @@ __pycache__/
 *_Output_Error.txt
 iigs/merlin32/src/main_mtest.s
 iigs/merlin32/build/
+
+# WebAssembly build artifacts
+wasm/build/
+wasm/dist/
