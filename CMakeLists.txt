@@ -68,6 +68,7 @@ if (VITA)
 
 	target_link_libraries(freegemas PRIVATE
 		SceShaccCgExt
+		taihen_stub
 		SceShaccCg_stub
 	)
 

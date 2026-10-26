@@ -109,7 +109,7 @@ jobs:
         uses: actions/checkout@v4
       - name: Install dependencies
         run: |
-          vdpm install SceShaccCgExt || vdpm SceShaccCgExt || true
+          vdpm install taihen SceShaccCgExt || vdpm taihen SceShaccCgExt || true
       - name: Build
         run: |
           cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="${VITASDK}/share/vita.toolchain.cmake" .
