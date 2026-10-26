@@ -78,20 +78,25 @@ Do an out-of-source compilation:
 
 Now ``freegemas.vpk`` can be tranfered and installed on Vita.
 
-## WebAssembly (WASM) - Play in Browser
-
-A WebAssembly port is maintained in [`wasm/`](wasm/). It compiles the native C++ SDL2 game directly to WebAssembly using [Emscripten](https://emscripten.org/), running at 60 FPS in any modern web browser with WebGL and Web Audio API.
-
-Read [`wasm/README.md`](wasm/README.md) and [`wasm/README-tw.md`](wasm/README-tw.md) for architecture and local build instructions. Automated deployment to GitHub Pages is supported via [`.github/workflows/deploy-wasm.yml`](.github/workflows/deploy-wasm.yml).
-
-
 ## Music licensing
 
 The music in the game is [Easy Lemon by Kevin MacLeod](https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1200076)
 Licensed under [Creative Commons: By Attribution 3.0](https://creativecommons.org/licenses/by/3.0/)
 
 
-## Apple //e VERA port
+---
+
+This fork add support to run freegemas on WebAssembly (WASM), Apple //e VERA, and Apple IIgs platforms.
+
+## WebAssembly (WASM) - Play in Browser [TRY HERE](https://anomixer.github.io/freegemas/)
+
+A WebAssembly port is maintained in [`wasm/`](wasm/). It compiles the native C++ SDL2 game directly to WebAssembly using [Emscripten](https://emscripten.org/), running at 60 FPS in any modern web browser with WebGL and Web Audio API.
+
+Read [`wasm/README.md`](wasm/README.md) and [`wasm/README-tw.md`](wasm/README-tw.md) for architecture and local build instructions. Automated deployment to GitHub Pages is supported via [`.github/workflows/deploy-wasm.yml`](.github/workflows/deploy-wasm.yml).
+
+
+
+## Apple //e VERA port [TRY HERE](https://apple2ts.com?slot2=vera&tab=vera#https://raw.githubusercontent.com/anomixer/freegemas/master/vera/freegemas.hdv)
 
 An Apple //e VERA port is maintained in [`vera/`](vera/). Read [`vera/README.md`](vera/README.md) and [`vera/AGENTS.md`](vera/AGENTS.md) for build instructions and technical details.
 
