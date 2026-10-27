@@ -48,6 +48,10 @@ class Memory:
         self.base=0xC000+slot*256;self.addr=[0,0];self.inc=[0,0];self.ctrl=0
         self.reg=bytearray(32);self.writes=Counter();self.keys_cleared=0;self.frames=0
         self.psg_writes=[]
+        # YM2151 device-select window ($C0A0/$C0C0) next to the VERA card.
+        self.fm_base=0xC0A0 if slot==2 else 0xC0C0
+        self.fm_present=False;self.fm_select=0;self.fm_regs=bytearray(256)
+        self.fm_busy=0;self.fm_writes=[]
         self.pcm_fifo=bytearray();self.pcm_writes=[];self.pcm_resets=0
         self.pcm_clocked=False
     def __getitem__(self,a):
@@ -62,6 +66,13 @@ class Memory:
             if r==7:return 1 # deterministic VSYNC pulse per wait, not wall-clock
             if r==27:return (self.reg[r]&63)|(128 if len(self.pcm_fifo)>=4095 else 0)|(64 if not self.pcm_fifo else 0)
             return self.reg[r]
+        if self.fm_base<=a<self.fm_base+2:
+            if a==self.fm_base:return self.fm_select
+            if not self.fm_present:return 0xFF     # empty device-select: open bus
+            # BUSY asserts after the timer reset and clears on later reads.
+            status=0x80 if self.fm_busy else 0
+            if self.fm_busy:self.fm_busy-=1
+            return status
         if a==0xC010:self.ram[0xC000]&=127;self.keys_cleared+=1
         if 0xC200<=a<0xC220 or 0xC400<=a<0xC420:return 0 # empty other slot
         if 0x0200<=a<0xC000 and self.aux_read:return self.aux[a]
@@ -92,6 +103,12 @@ class Memory:
                         samples=round(self.reg[28]*48828.125/128/60)
                         stride=(1,2,2,4)[(self.reg[27]>>4)&3]
                         del self.pcm_fifo[:samples*stride]
+            return
+        if self.fm_base<=a<self.fm_base+2:
+            if a==self.fm_base:self.fm_select=v;return
+            self.fm_writes.append((self.frames,self.fm_select,v))
+            self.fm_regs[self.fm_select]=v
+            if self.fm_select==0x14 and v&0x30:self.fm_busy=8
             return
         if a==0xC010:self.ram[0xC000]&=127;self.keys_cleared+=1
         elif a==0xC002:self.aux_read=False

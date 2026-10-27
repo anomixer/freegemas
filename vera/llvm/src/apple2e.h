@@ -108,6 +108,12 @@ struct __vera {
 
 #define VERA    (*(volatile struct __vera *)VERA_BASE)
 
+/* YM2151 (OPM) FM daughterboard: device-select space next to VERA's window. */
+#define FM_BASE         (0xC080 + ((VERA_BASE >> 8) & 0x0F) * 0x10)
+#define VERA_YM_REG     (*(volatile unsigned char *)(FM_BASE + 0))
+#define VERA_YM_DATA    (*(volatile unsigned char *)(FM_BASE + 1))
+#define YM_KEY_REG      0x08
+
 /* VERA address increment/decrement strides (ADDR_H bits 7:4). */
 #define VERA_DEC_0    ((0 << 1) | 1) << 3
 #define VERA_DEC_1    ((1 << 1) | 1) << 3

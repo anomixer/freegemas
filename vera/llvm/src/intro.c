@@ -20,6 +20,16 @@ static uint8_t mouse_detect(void){
     }
     return 0;
 }
+
+#include "fm_probe.h"
+/* Same YM2151 BUSY probe the game runs before choosing MUSIC.VZM. */
+static uint8_t fm_detect(void){
+    volatile uint8_t *scratch=(volatile uint8_t *)0x0300;
+    uint8_t i;
+    for(i=0;i<sizeof(fm_probe);i++)scratch[i]=fm_probe[i];
+    ((void(*)(void))0x0300)();
+    return *(volatile uint8_t *)0x02FF;
+}
 int main(void){
     uint16_t i;
     uint8_t mouse=mouse_detect();
@@ -38,6 +48,7 @@ int main(void){
 #else
     line(5,"STATUS: VERA CARD DETECTED IN SLOT 2");
 #endif
+    line(4,fm_detect()?"FM: YM2151 DETECTED (OPM)":"FM: NONE, PSG MUSIC ONLY");
     }
     line(6,mouse==4?"MOUSE: SLOT 4":mouse==5?"MOUSE: SLOT 5":"MOUSE: NONE");
     line(7,"CONTROLS:");

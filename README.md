@@ -104,7 +104,7 @@ An Apple //e VERA port is maintained in [`vera/`](vera/). Read [`vera/README.md`
 
 - **Platform & Engine**: Compiled to 65C02 native code using the [LLVM-MOS SDK](https://github.com/llvm-mos/llvm-mos-sdk). Uses an 800 KB ProDOS HDV disk image ([`vera/freegemas.hdv`](vera/freegemas.hdv)).
 - **Graphics**: 320×240 8bpp bitmap mode with persistent VERA hardware gem sprites and top-edge masking.
-- **Audio & Features**: Background music and sound effects routed through VERA PSG; segmented loader for title, game, instructions, and options; full keyboard and mouse control support.
+- **Audio & Features**: Background music and sound effects routed through VERA PSG, with an optional A2VERA YM2151 FM music path that is auto-detected at boot and falls back to the PSG stream when absent; segmented loader for title, game, instructions, and options; full keyboard and mouse control support.
 - **Requirements**: 128 KB Apple //e with a VERA card in Slot 2 or Slot 4, tested in VERA-enabled AppleWin and on real hardware (VeraSD).
 
 ---

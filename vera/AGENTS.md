@@ -17,7 +17,7 @@
 - `llvm/src/main.c`、`board.c`、`board.h`：遊戲、棋盤、計分、動畫與畫面更新。
 - `llvm/src/effects.c`／`effects.h`：游標、選取框、消除星芒和每組 match 得分浮字。限 4 組同時浮字、32 顆星芒；超量以 ring pool 取代最舊特效，不影響實際計分。
 - `llvm/src/sound.c`／`sound.h`／`pcm_feed.S`：五個原作 PCM 音效（match1–3 已在建置時裁切為前 6640 bytes，總計 26912 bytes）完整預載到 VERA VRAM；播放不讀磁碟也不占 Aux RAM，以 port1 讀取補 FIFO，保存 port1 狀態，不動 PSG。
-- `llvm/src/music.c`／`music.h`／`music_aux.S`：整首純音平滑 +9dB PSG（`music_pure_gained.psg`，56675 bytes）預載到 Aux RAM（`$0800–$BFFF`，46 KB）與 Aux Language Card Bank 1（連續 `$D000–$FFFF`，12 KB，實際使用 9.5 KB），以 VSYNC 直接解析 raw PSG stream；16 聲道供音樂，保留 VERA port0 的位址／stride／control。
+- `llvm/src/music.c`／`music.h`／`music_aux.S`：兩條背景音樂路徑，以 YM2151 是否存在決定。開機先跑 `fm_detect()`（71-byte BUSY probe，`llvm/src/fm_probe.h`，載入 `$0300` 後讀 `$02FF`），有晶片時載入 `MUSIC.VZM` 並以 8 個 FM 聲道＋PSG 打擊播放；沒有晶片或檔案不存在時載入 `MUSIC.PSG`（純音平滑 +9dB，`music_pure_gained.psg`，56675 bytes）。兩者都在開局前整份預載（VZM 90 個 logical page 只用到 Aux RAM；PSG 另需 Aux Language Card Bank 1 `$D000–$FFFF`），播放時零磁碟讀取，以 VSYNC 解析；保留 VERA port0 的位址／stride／control，PSG 寄存器基線 `0,0,0,128`，FM 起播／loop 先 key-off 並把 `$20–$FF` 歸零。
 - `llvm/src/hiscore.h`：跨 segment 的兩模式高分與 dirty flag。
 - `tools/build_assets.mjs`：以 `media/` 建立遊戲／標題 palette、RLE 場景和 sprites。
 - `llvm/tools/build_hdv.py`：把程式與 RLE 場景打包至 800 KB ProDOS HDV，並建立跨 directory block 的檔案目錄。
@@ -106,6 +106,15 @@ AppleWin 重新建置前先卸載或關閉正在使用該 HDV 的模擬器。確
 
 ## 溝通與變更紀錄
 
+2026-10-28 YM2151 FM 音樂路徑（`MUSIC.VZM`）與 PSG 後備：
+1. `llvm/src/fm_probe.h`：71-byte 的 YM2151 BUSY probe，依 `VERA_BASE`（slot 2 `$C0A0/$C0A1`、slot 4 `$C0C0/$C0C1`）分成兩份表。`fm_detect()` 把它抄到 `$0300`、呼叫後讀 `$02FF`；`music_init` 與 `intro.c` 共用同一份表，Intro row 4 顯示 `FM: YM2151 DETECTED (OPM)` 或 `FM: NONE, PSG MUSIC ONLY`。probe 必須在 `music_aux_init` 之前跑，因為後者會把 18-byte reader 鏡像到同一個 `$0300`。
+2. `llvm/src/music.c`：`music_init` 先偵測晶片，有 FM 且 `MUSIC.VZM` 存在（3 ≤ size ≤ 63488）時載入 VZM，否則載入 `MUSIC.PSG`；兩者都整份預載、播放期間不讀碟。VZM 沒有檔頭與 512-byte 記錄補齊（22974 bytes、90 個 logical page，只用 Aux RAM `$0800` 之後），只有 `$FF` 在結尾代表 loop 回 0。
+3. VZM 記錄格式（不是完整 ZSM 檔）：`$00–$7F` 延遲 N 個 VSYNC tick、`$80–$BF` PSG（`0x80|reg`,value）、`$C0–$DF` FM batch（count=`(byte&$1F)+1`，count 組 reg/value）、`$E0–$FE` NOP、`$FF` 結束並 loop。tick 0 與每次 loop 先 key-off 並把 YM 寄存器 `$20–$FF` 歸零（PSG 基線 `0,0,0,128`），因此轉換器的去重基線就是全零；`$08`（key mask）永遠不省略。
+4. `vera/tools/build_music_vzm.py`：`media/music.ogg` → WAV → `wav2psg.py` 的 FFT／onset 分析 → 聲部指派（2 bass、6 tine、PSG 打擊 12–15）→ ZSM → VZM；產出 `generated/music.vzm`、`generated/music.zsm`、`generated/music_vzm.h` 與 `llvm/build/music_vzm_report.json`（7582 ticks、4306 FM／4630 PSG writes）。CMake 的 disk target 會重跑此腳本，`build_hdv.py` 額外打包 `MUSIC.VZM`。
+5. YM2151 細節：operator slot 順序是 `M1,M2,C1,C2`，CON=4 時 carrier 是 slot 2／3（TL `$70+ch`／`$78+ch`），modulator 是 slot 0／1（`$40/$48+ch`）；KC 用 `midi//12-2`、code 14（C）對 C，其餘 `midi//12-1` 配 `KC_INVERSE`，實測約 ±30 cents。TL 約 0.75 dB／step。
+6. 測試：`llvm/tools/test_music_vzm.py` 不經 resident loader，直接比對 probe（有／無晶片）、Intro 文字、`music_init` 選擇與後備、以及 7583 tick 的 PSG 影像與 FM 寫入順序（兩 slot 都 byte-exact，含 loop 與 stop／OFF）；`test_mos.py` 增加 YM2151 model（BUSY、select/data port 與寫入紀錄）。FM 起播／loop 兩個 tick 各約 45k cycles（約 44 ms），其餘平均約 677 cycles。
+7. 尚未完成：本 session 的 AppleWin 在無互動桌面／無音訊裝置下無法推進（DirectSound 初始化後停住），因此沒有實機或 AppleWin 聽感／畫面驗證；轉譜是近似，不是原作分軌或人工校訂樂譜。
+
 2026-09-30 音效裁切與完整 Raw PSG 記憶體預載（`optimize` 分支）：
 1. `build_sound.mjs` 將 `match1.pcm`、`match2.pcm`、`match3.pcm` 直接在建置階段截斷為 6640 bytes（約 0.30 秒），五個 PCM 總計由 65672 bytes 降至 26912 bytes，完全塞入 VERA VRAM 的 109 頁預載池（27904 bytes），徹底釋放 Aux RAM，並移除 `sound.c` 的 Aux RAM 讀取邏輯與 `MUSIC.CRV`。
 2. `music.c` 與 `music_aux.S` 改為直接載入並播放 `MUSIC.PSG`（由 `music_midi_pure_smooth.psg` 經 `build_music.py` 套用 +9dB 增益產生的 `generated/music_pure_gained.psg`，56675 bytes，約 222 pages），不再使用 FGM2／Huffman 曲線壓縮（同時釋放 Main RAM 的曲線表空間）：
@@ -160,9 +169,9 @@ Options 高分區使用 1× 字級（小於上方 2× 選單），`HIGH SCORE` �
 2026-09-27 音效預載重整（取代下方舊串流／FGM1 記憶體描述）：五份 raw PCM 共65672 bytes，27904 bytes 放上述四段 VRAM，餘37768 bytes 放 aux `$2C00..$BFFF`；播放不讀磁碟，原始 PCM byte 不變。音樂 FGM2 事件9014 bytes 放 aux `$0800..$2BFF`（配置9216 bytes），共用 Huffman 音量曲線9167 bytes 放 MAIN `$0800..$0BFF`、`$0E00..$1FFF` 及3535-byte BSS；避開磁碟 buffer `$0C00..$0DFF`。`music_aux_top` 決定音效 aux 起點；必須先 `music_init` 再 `sound_init`。aux reader 的 source 與 destination operands 都需同步 MAIN／AUX 鏡像，音效 cache 不可覆蓋音樂 cache。Gem patterns 改由 `GEM.PAT` 載入，不再重複佔用主程式7KB。HUD 背景備份移主 RAM，取消 Game Over VRAM 備份；Game Over 按 R 才在靜音後重載場景，正常消除／R 不重載場景。起播先填滿約4KB FIFO，後續每 tick 最多補1024 bytes（FULL 就停），避免慢消除時512-byte補充不足。兩 slot 五份音效完整 FIFO byte 比對、零 runtime 磁碟讀取及音樂7398-frame全部寄存器比對通過；音樂解碼平均4652、最高17324 CPU cycles/tick。主程式 `__bss_end=$AFF9`。VERA 仍需 CPU 補 FIFO，不是自動從 VRAM 播放；不能僅因預載宣稱所有實機 lag 消失。下方早期測量保留作歷史，不代表目前效能。
 
 - [ ] 忠實原作音效：使用者拒絕 PSG 合成音。已改五個原作 OGG → 16-bit mono PCM（rate 29／11062.622 Hz），沿用原作 gain 0.3／0.25，刪除自創 Hint／Reset／Game Over 音效。`build_sound.mjs` 使用 ffmpeg 解碼／高品質 SWR 重採樣，輸出五個 `generated/*.pcm`，試聽 WAV 在 `llvm/build/`；disk target 自動轉換／打包。`sound.c` 啟動快取每檔 sapling index（最多 48 blocks），runtime 讀 512-byte buffer，`pcm_feed.S` 補 VERA FIFO，不動 VRAM／PSG。`test_sound.py` 兩 slot 比對五條完整 FIFO stream 與生成 PCM byte-for-byte，覆蓋 FULL／EMPTY、OFF／ON、MLI ZP、swap／Esc。**仍非 100% 原作**：取樣率／stereo、同時混音、Title／Options select 音效尚未完成；目前新音效中斷舊音效。1 MHz CPU 初步動畫平均約 31.5k cycles/frame，比無音效慢，需優先降低串流成本／預載取樣；不能宣稱效能、實機聲音已驗證。
-- [x] 遊戲背景音樂：採使用者核准的純音版音符／平滑包絡，無 bass／鼓模擬／額外泛音；`tools/build_music.py` 將 `generated/music_midi_pure_smooth.psg` 打包成 `music.fgm`（41139 bytes／7398 frames），原生 PSG volume LUT 增益2倍，非直接串流核准的 WAV。VERA 波形／gain 與線性 preview 不同，不能聲稱聽感／响度相同；實機試聽仍待確認。Options Music 真正控制遊戲音樂，R 從頭、Esc 靜音；Title／Options 尚無音樂。與 PCM 音效互不占用同一路徑。
+- [x] 遊戲背景音樂：PSG 後備路徑採使用者核准的純音版音符／平滑包絡，無 bass／鼓模擬／額外泛音；`tools/build_music.py` 產生的 `generated/music_pure_gained.psg` 直接以 raw `MUSIC.PSG` 串流播放（+9dB 增益，見上方 2026-09-30 記錄，`music.fgm` 已不再使用）；有 YM2151 時改用 `MUSIC.VZM`（見 2026-10-28 記錄）。VERA 波形／gain 與線性 preview 不同，不能聲稱聽感／响度相同；實機試聽仍待確認。Options Music 真正控制遊戲音樂，R 從頭、Esc 靜音；Title／Options 尚無音樂。與 PCM 音效互不占用同一路徑。
 - 音樂記憶體：Apple IIe aux `$0800` 起載入整首 packed stream，範圍不得超過 `$BFFF`；主 RAM 增加512-byte載入buffer、92個block索引、256-byte頁cache。遊戲期間音樂零磁碟讀取；缺aux RAM時安全停用。`music_aux.S` 把18-byte reader鏡像至MAIN／AUX `$0300..$0311`，RAMRD會連instruction fetch一起切換，必須鏡像！source page operand `$0307` 兩份同步，切換期間SEI，RAMWRT保持MAIN；stack/ZP留MAIN。loader下一次launch覆蓋MAIN `$0300`，所以Esc先music_stop，再回loader。不要改ProDOS vectors `$03D0`起或page3設定。
-- `test_music.py` 兩slot逐frame比對7398 frames全部寄存器（除增益映射外相同音符），檢查loop／ON／OFF、graphics port保存、無aux保護與PCM互不干擾。模型音樂平均約2.8k cycles/tick、最高約14.9k；既有PCM disk refill仍使整體動畫超過1MHz 60Hz預算，不能宣稱全遊戲60fps或已消除所有音訊雜音。
+- `test_music.py` 原本比對 PSG 音樂的 7398 frames，但它跟其他經 resident loader 開機的測試一樣，現在會停在 model 缺少的檔案層 MLI；在補上 model 之前不可信。FM／VZM 路徑改由 `test_music_vzm.py` 覆蓋（probe、選擇與後備、7583 tick 的 PSG 影像與 FM 寫入順序、loop、stop／OFF），PSG 後備的播放邏輯本身未改。
 - PSG 砂礫聲試聽：`tools/midi_psg_arrange.py --style ensemble --no-overtones --smooth` 產生 `generated/music_midi_ensemble_no_overtones_smooth.psg`；不加短泛音，包絡改 60Hz，三 frame 平滑起落，立即换音高前先靜音。保留舊版／原 MIDI；測試與完整 stream 驗證通過，尚未證實消除雜音，也未接入 HDV。詳細限制見 `docs/music-conversion-research.md`。
 - 網路研究／舊 MIDI converter 修正：參考原作者 Easy Lemon 曲目頁、DreamTracker VERA instruments/envelopes、Furnace VERA macros；詳細來源／取捨在 `docs/music-conversion-research.md`。原作配器 Guitar/Bass/Kit/Celesta/Marimba；使用者 MIDI 全部 channel0/program0 鋼琴，沒有鼓組分軌。舊 piano preset 增加 +7 等額外音高、低音升八度、多 voice bass、數秒 bass release、高力度壓縮和 WAV tanh，不能當通用忠實轉換。新 `tools/midi_psg_arrange.py` 保留原音高、力度、tempo/pedal/bend，短 release，priority voice allocation；clean 與按音域推估配器的 ensemble 兩個試作。`test_midi_arrangement.py` 驗證無額外五度／無移調、力度和 release、原 MIDI 和 loop 流；兩版經 check_psg 通過。PSG 75.6KB／91.8KB，仍有 voice steal，未接入遊戲，不能宣稱最佳聽感或已解決記憶體／效能。試聽 `llvm/build/music_midi_clean_listen_25s.wav`／`music_midi_ensemble_listen_25s.wav`（僅試聽線性增益3倍，非硬體擷取）。
 - 使用者提供 `llvm/build/music_original.mid`：以 veramusic `mid2psg.mjs --synth=piano --chorus=off --loop` 轉換（先複製為 `music_from_midi.mid`，防止 converter 覆寫同名原作 WAV）。MIDI format 0／3175 notes／122.8秒，PSG 7397 frames／123.3秒含 release、60272 bytes、26436 writes、max40/frame；`check_psg.mjs` 驗證 loop 0／全流通過。PSG 複本在 `generated/music_from_midi.psg`；完整試聽 `llvm/build/music_from_midi.wav`、25秒 `music_from_midi_25s.wav`。這版直接依 MIDI 音符轉換，不套先前 FFT／手工 taiko detector；未接入遊戲，需再確認 MIDI 是否有正確鼓聲標記和聲音表現。原作 `music_original.wav` 保留不覆寫。
@@ -201,9 +210,14 @@ Options 高分區使用 1× 字級（小於上方 2× 選單），`HIGH SCORE` �
 2026-09-27 match2 記憶體邊界修正：音效不能跨 VRAM／aux 邊界；載入器遇到跨界的完整音效先補零至邊界，再由 aux 起點載入，padding 不算播放長度。目前 VRAM 尾端56 bytes 留空，match2 完整位於 aux `$2C00..$757B`（18812 bytes），match3 位於 `$757C..$BFBF`（19012 bytes），預載池尾端剩64 bytes。原始 PCM 不變，`test_sound.py` 另驗證五個音效不跨記憶體域、aux 中完整 match2 與檔案相同。AppleWin `VERAAudio.h` 的 `FIFO_SIZE=4096`，實作最多容納4095 bytes，遊戲無法調大；目前起播已填滿，rate29／16-bit mono 約185ms。額外軟體 buffer 不會延長硬體 FIFO，剩餘爆音仍需檢查 refill 時序／音效中斷，不能宣稱跨界配置就是確定根因。
 
 ```powershell
-python -m pip install py65
+python -m pip install py65 numpy
+python -u vera\llvm\tools\test_music_vzm.py
 python -u vera\llvm\tools\test_mos.py
 python -u vera\llvm\tools\test_sound.py
 ```
+
+`test_music_vzm.py` 不經 resident loader：它直接驅動 Intro 的 FM 偵測、`music_init()` 的選擇／後備與整份 VZM 解碼，兩 slot 共 7583 tick byte-exact（PSG 影像、FM 寫入順序、loop、stop／OFF）；這是 model 比對，不是 FM 聽感驗證。
+
+已知 model 缺口（2026-10-28 確認，FM 工作前就存在）：需要經 resident loader 開機的回歸（`test_mos.py`、`test_music.py`、`test_intro.py`、`test_loading.py`、`test_mouse.py` 等）會停在 `test_mos.py` 的 `assert cmd in (0x80,0x81)`，因為 loader 現在用檔案層 MLI（`GET_PREFIX $C7`／`OPEN $C8`／`SET_MARK $CE`／`READ $CA`／`GET_EOF $D1`／`CLOSE $CC`），model 只實作 block 讀寫 `$80`／`$81`。補上檔案層 MLI model 之前，這些測試的「通過」不可信。
 
 測試直接執行建置的 65C02 binaries，VERA／MLI 是 instrumented model；不是實機測試。游標更新 9 bytes，合法交換／連鎖棋盤 bitmap 寫入量 0；單個測試棋步動畫間平均約 14.9k cycles，但配對／補牌前仍有較長處理間隔，不宣稱全程 60fps。`applewin_probe.ps1` 是測試中的 AppleWin keyboard／debugger／capture helper；測試用 HDV 放 `llvm/build/`，合成高分不得寫入交付映像。

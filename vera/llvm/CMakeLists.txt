@@ -25,6 +25,15 @@ set(OUT4 "${CMAKE_BINARY_DIR}/freegemas4.bin")
 set(TITLE "${CMAKE_BINARY_DIR}/title.bin")
 set(TITLE4 "${CMAKE_BINARY_DIR}/title4.bin")
 set(SYSTEM "${CMAKE_BINARY_DIR}/freegemas.sys")
+set(VZM_PLAYER "${CMAKE_BINARY_DIR}/vzm_player.bin")
+set(VZM_PLAYER4 "${CMAKE_BINARY_DIR}/vzm_player4.bin")
+add_custom_command(OUTPUT "${VZM_PLAYER}"
+  COMMAND "${MOS_CLANG}" -Oz -mcpu=mos65c02 -fno-lto -T "${SRC}/link3000.ld" -DVERA_BASE=0xC200 -I "${SRC}" -o "${VZM_PLAYER}" "${SRC}/music.c" "${SRC}/music_aux.S" "${CMAKE_CURRENT_SOURCE_DIR}/tools/vzm_player_stub.c"
+  DEPENDS "${SRC}/music.c" "${SRC}/music_aux.S" "${SRC}/fm_probe.h" "${CMAKE_CURRENT_SOURCE_DIR}/tools/vzm_player_stub.c" "${SRC}/link3000.ld" VERBATIM)
+add_custom_command(OUTPUT "${VZM_PLAYER4}"
+  COMMAND "${MOS_CLANG}" -Oz -mcpu=mos65c02 -fno-lto -T "${SRC}/link3000.ld" -DVERA_BASE=0xC400 -I "${SRC}" -o "${VZM_PLAYER4}" "${SRC}/music.c" "${SRC}/music_aux.S" "${CMAKE_CURRENT_SOURCE_DIR}/tools/vzm_player_stub.c"
+  DEPENDS "${SRC}/music.c" "${SRC}/music_aux.S" "${SRC}/fm_probe.h" "${CMAKE_CURRENT_SOURCE_DIR}/tools/vzm_player_stub.c" "${SRC}/link3000.ld" VERBATIM)
+add_custom_target(vzm_player DEPENDS "${VZM_PLAYER}" "${VZM_PLAYER4}")
 set(HOWTO "${CMAKE_BINARY_DIR}/howto.bin")
 set(HOWTO4 "${CMAKE_BINARY_DIR}/howto4.bin")
 set(OPTION "${CMAKE_BINARY_DIR}/option.bin")
@@ -102,7 +111,7 @@ add_custom_command(OUTPUT "${OPTION4}" COMMAND "${MOS_CLANG}" -Oz -mcpu=mos65c02
 foreach(IMAGE IN ITEMS "${OUT}" "${OUT4}")
   add_custom_command(OUTPUT "${IMAGE}" APPEND DEPENDS "${MOUSE_GEN}")
   add_custom_command(OUTPUT "${IMAGE}" APPEND DEPENDS "${LOADING_HEADER}" "${SRC}/loading.h")
-  add_custom_command(OUTPUT "${IMAGE}" APPEND DEPENDS "${SRC}/effects.c" "${SRC}/effects.h" "${EFFECTS_DIGITS_GEN}" "${SRC}/sound.c" "${SRC}/sound.h" "${SRC}/pcm_feed.S" "${SRC}/music.c" "${SRC}/music.h" "${SRC}/music_aux.S" "${MUSIC_HEADER}")
+  add_custom_command(OUTPUT "${IMAGE}" APPEND DEPENDS "${SRC}/effects.c" "${SRC}/effects.h" "${EFFECTS_DIGITS_GEN}" "${SRC}/sound.c" "${SRC}/sound.h" "${SRC}/pcm_feed.S" "${SRC}/music.c" "${SRC}/music.h" "${SRC}/music_aux.S" "${SRC}/fm_probe.h" "${MUSIC_HEADER}")
 endforeach()
 foreach(IMAGE IN ITEMS "${TITLE}" "${TITLE4}" "${HOWTO}" "${HOWTO4}" "${OPTION}" "${OPTION4}")
   add_custom_command(OUTPUT "${IMAGE}" APPEND DEPENDS ${MENU_MOUSE} "${SRC}/menu_mouse.h" "${SRC}/mouse.h" "${MOUSE_GEN}")
@@ -125,15 +134,16 @@ foreach(INTRO_SLOT IN ITEMS 2 4)
   add_custom_command(OUTPUT "${CMAKE_BINARY_DIR}/${INTRO_NAME}.bin"
     COMMAND "${MOS_CLANG}" -Oz -mcpu=mos65c02 -T "${SRC}/link3000.ld" -DVERA_BASE=${INTRO_BASE}
       -o "${CMAKE_BINARY_DIR}/${INTRO_NAME}.bin" "${SRC}/intro.c"
-    DEPENDS "${SRC}/intro.c" "${SRC}/apple2e.h" "${SRC}/random_seed.h" "${SRC}/link3000.ld" VERBATIM)
+    DEPENDS "${SRC}/intro.c" "${SRC}/apple2e.h" "${SRC}/fm_probe.h" "${SRC}/random_seed.h" "${SRC}/link3000.ld" VERBATIM)
   add_custom_target(${INTRO_NAME} DEPENDS "${CMAKE_BINARY_DIR}/${INTRO_NAME}.bin")
   add_dependencies(freegemas ${INTRO_NAME})
 endforeach()
 add_custom_target(disk
   COMMAND node "${CMAKE_CURRENT_SOURCE_DIR}/../tools/build_sound.mjs"
   COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/../tools/build_music.py" --header "${MUSIC_HEADER}"
+  COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/../tools/build_music_vzm.py"
   COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/tools/build_hdv.py" --cadius "${CADIUS_EXECUTABLE}"
-  DEPENDS freegemas "${CMAKE_CURRENT_SOURCE_DIR}/tools/build_hdv.py" "${CADIUS_EXECUTABLE}"
+  DEPENDS freegemas vzm_player "${CMAKE_CURRENT_SOURCE_DIR}/tools/build_hdv.py" "${CADIUS_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/../assets/prodos-system/PRODOS#FF0000"
     "${CMAKE_CURRENT_SOURCE_DIR}/../assets/prodos-system/CLOCK.SYSTEM#FF0000"
   WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/..")
