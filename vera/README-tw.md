@@ -106,4 +106,4 @@ python -u vera\llvm\tools\test_vera_detect.py
 
 `test_music_vzm.py` 不經過 resident loader：它在 model 上直接驅動 Intro 的 FM 偵測、`music_init()` 的檔案選擇（有 FM→`MUSIC.VZM`、無 FM 或檔案不存在→`MUSIC.PSG`）與整份 VZM 解碼，兩個 slot 都逐 tick 比對 PSG 寄存器影像、YM2151 寫入順序、loop 與 stop／OFF 靜音，共 7583 tick byte-exact。它不能證明 FM 晶片的實際聽感。
 
-已知 model 缺口：需要經 resident loader 開機的回歸（`test_mos.py`、`test_music.py`、`test_intro.py`、`test_loading.py` 等）目前會停在 loader 的檔案層 MLI `GET_PREFIX`（`$C7`），因為 `test_mos.py` 只模擬 block 讀寫（`$80`／`$81`）。這個失敗在 FM 工作之前就存在；補上檔案層 MLI model 之前，這些測試的結果不能當作通過。
+`test_mos.py` 的 model 現在除了 block 讀寫（`$80`／`$81`）也實作 resident loader 用到的檔案層 MLI（`GET_PREFIX` `$C7`、`OPEN` `$C8`、`READ` `$CA`、`WRITE` `$CB`、`SET_MARK` `$CE`、`GET_EOF` `$D1`、`CLOSE` `$CC`、`QUIT` `$65`），冷開機、Title 與遊戲內路徑都能在 harness 跑完。`test_music.py` 改為播放實際出貨的 raw `MUSIC.PSG` 後備流，逐 frame 比對 7398 frames；`test_sound.py` 改比對四個 VRAM 預載池內的五段 PCM；`test_loading_progress.py` 依磁碟實際檔案計 block。這些仍是 model 測試，不是 AppleWin 或實機驗證。

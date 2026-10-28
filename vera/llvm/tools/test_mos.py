@@ -41,6 +41,31 @@ def scene_pixels(file):
     assert len(pixels)==76800
     return pixels
 
+def file_blocks(disk,storage,key,size):
+    """Block list backing one ProDOS file, following its index level(s)."""
+    if storage==1:return [key]
+    index=[disk[key*512+i]|disk[key*512+256+i]<<8 for i in range(256)]
+    if storage==2:return index[:(size+511)//512]
+    return [disk[sub*512+i]|disk[sub*512+256+i]<<8
+            for sub in index[:(size+511)//512//256+1] for i in range(256)]
+
+def read_catalog(disk):
+    """Name -> storage type, key block, EOF and content for the boot volume."""
+    files={};block=2;seen=set()
+    while block and block not in seen:
+        seen.add(block);page=disk[block*512:(block+1)*512]
+        for i in range(1 if block==2 else 0,13):
+            e=page[4+i*39:4+(i+1)*39]
+            if not e[0]:continue
+            name=bytes(e[1:1+(e[0]&15)]).decode('ascii','replace')
+            storage,key,size=e[0]>>4,e[17]|e[18]<<8,int.from_bytes(e[21:24],'little')
+            blocks=file_blocks(disk,storage,key,size)
+            data=bytearray()
+            for b in blocks:data+=disk[b*512:(b+1)*512]
+            files[name]=dict(storage=storage,key=key,eof=size,blocks=blocks,data=data[:size])
+        block=page[2]|page[3]<<8
+    return files
+
 class Memory:
     def __init__(self,slot):
         self.ram=bytearray(65536);self.vram=bytearray(131072)
@@ -128,6 +153,8 @@ class Machine:
         if int.from_bytes(system[:2],'little')==0x2000:system=system[4:]
         self.mem.ram[0x2000:0x2000+len(system)]=system
         self.mem.ram[0xBF30]=0x70;self.write_calls=0;self.read_calls=0;self.fail_write=False
+        self.files=read_catalog(self.disk);self.opened={};self.next_ref=1
+        self.quit_params=None
         # Fixed seed only in the test fixture, for repeatable cascade coverage.
         self.mem.ram[0x3EA:0x3EC]=(0xBEEF).to_bytes(2,'little')
         self.sym=symbols(LLVM/f'build/freegemas{4 if slot==4 else ""}.bin.elf')
@@ -138,20 +165,13 @@ class Machine:
             # Real JSR return address precedes inline MLI command + parameter ptr.
             low=self.cpu.stPop();high=self.cpu.stPop();ret=low|high<<8
             cmd=self.mem.ram[ret+1];p=int.from_bytes(self.mem.ram[ret+2:ret+4],'little')
-            params=self.mem.ram[p:p+6];dest=int.from_bytes(params[2:4],'little');block=int.from_bytes(params[4:6],'little')
-            assert cmd in (0x80,0x81),(hex(cmd),hex(ret))
-            status=0
-            if cmd==0x80:
-                self.read_calls+=1
-                self.mem.ram[dest:dest+512]=self.disk[block*512:(block+1)*512]
-            else:
-                self.write_calls+=1
-                if self.fail_write:status=0x27
-                else:self.disk[block*512:(block+1)*512]=self.mem.ram[dest:dest+512]
+            status=self.mli(cmd,p)
             # Deliberately clobber ALL compiler ZP state and X/Y like a system call.
             self.mem.ram[:192]=bytes([0xDA])*192
             self.cpu.x=0xAA;self.cpu.y=0xBB;self.cpu.a=status
-            self.cpu.p=(self.cpu.p&~1)|(1 if status else 0);self.cpu.pc=(ret+4)&65535
+            # Carry marks a failed call; READ's informational EOF code does not.
+            self.cpu.p=(self.cpu.p&~1)|(1 if status not in (0,0x42) else 0)
+            self.cpu.pc=(ret+4)&65535
         else:
             if self.cpu.pc==self.sym.get('waitvsync'):
                 if self.last_wait and self.value('resolving'):self.wait_cycles.append(self.cpu.processorCycles-self.last_wait)
@@ -159,6 +179,73 @@ class Machine:
             if self.cpu.pc==self.sym.get('show_game_over'):
                 self.endings.append((self.value('score',4),self.mem.ram[self.sym['resolving']],has_match(self.board())))
             self.cpu.step()
+    def mli(self,cmd,p):
+        """Minimal ProDOS 8 MLI: block I/O plus the file-level calls used by
+        the resident loader (GET_PREFIX/OPEN/READ/WRITE/SET_MARK/GET_EOF/
+        CLOSE/QUIT).  Files come from the boot volume catalog."""
+        q=self.mem.ram[p:p+8]
+        if cmd in (0x80,0x81):
+            dest=q[2]|q[3]<<8;block=q[4]|q[5]<<8
+            if cmd==0x80:
+                self.read_calls+=1;self.mem.ram[dest:dest+512]=self.disk[block*512:(block+1)*512]
+            else:
+                self.write_calls+=1
+                if self.fail_write:return 0x27
+                self.disk[block*512:(block+1)*512]=self.mem.ram[dest:dest+512]
+            return 0
+        if cmd==0xC7:                                   # GET_PREFIX
+            buf=q[1]|q[2]<<8;prefix=b'/FREEGEMAS'
+            self.mem.ram[buf]=len(prefix);self.mem.ram[buf+1:buf+1+len(prefix)]=prefix
+            return 0
+        if cmd==0xC8:                                   # OPEN
+            ptr=q[1]|q[2]<<8;length=self.mem.ram[ptr]
+            path=bytes(self.mem.ram[ptr+1:ptr+1+length]).decode('ascii','replace')
+            name=path.rsplit('/',1)[-1].upper()
+            if name not in self.files:return 0x46
+            ref=self.next_ref;self.next_ref+=1;self.opened[ref]=[name,0];self.mem.ram[p+5]=ref
+            return 0
+        if cmd==0xCC:                                   # CLOSE
+            self.opened.pop(q[1],None);return 0
+        if cmd==0xCE:                                   # SET_MARK
+            entry_=self.opened.get(q[1])
+            if not entry_:return 0x2D
+            entry_[1]=q[2]|q[3]<<8|q[4]<<16;return 0
+        if cmd==0xCA:                                   # READ
+            entry_=self.opened.get(q[1])
+            if not entry_:return 0x2D
+            dest=q[2]|q[3]<<8;count=q[4]|q[5]<<8;start=entry_[1]
+            chunk=bytes(self.files[entry_[0]]['data'][start:start+count])
+            self.mem.ram[dest:dest+len(chunk)]=chunk;entry_[1]=start+len(chunk)
+            self.mem.ram[p+6]=len(chunk)&255;self.mem.ram[p+7]=len(chunk)>>8
+            self.read_calls+=1
+            return 0 if len(chunk)==count else 0x42
+        if cmd==0xCB:                                   # WRITE
+            entry_=self.opened.get(q[1])
+            if not entry_:return 0x2D
+            self.write_calls+=1
+            if self.fail_write:return 0x27
+            src=q[2]|q[3]<<8;count=q[4]|q[5]<<8;start=entry_[1]
+            f=self.files[entry_[0]]
+            f['data'][start:start+count]=self.mem.ram[src:src+count]
+            f['eof']=max(f['eof'],start+count);entry_[1]=start+count
+            self.mem.ram[p+6]=count&255;self.mem.ram[p+7]=count>>8
+            self.write_back(entry_[0])
+            return 0
+        if cmd==0xD1:                                   # GET_EOF
+            entry_=self.opened.get(q[1])
+            if not entry_:return 0x2D
+            size=self.files[entry_[0]]['eof']
+            self.mem.ram[p+2]=size&255;self.mem.ram[p+3]=(size>>8)&255;self.mem.ram[p+4]=size>>16
+            return 0
+        if cmd==0x65:                                   # QUIT
+            self.quit_params=list(q);return 0
+        raise AssertionError(f'unknown MLI command ${cmd:02X} at parameter block ${p:04X}')
+    def write_back(self,name):
+        """Mirror a written file into its data blocks so disk_scores() agrees."""
+        f=self.files[name]
+        for i,block in enumerate(f['blocks']):
+            chunk=f['data'][i*512:(i+1)*512]
+            if chunk:self.disk[block*512:block*512+len(chunk)]=chunk
     def until(self,predicate,limit=12_000_000):
         for n in range(limit):
             if predicate():return n

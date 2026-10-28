@@ -42,7 +42,6 @@ for slot in (2, 4):
         m.until(lambda: idle(m))
         m.put('score', 12345, 4)
         m.mem.ram[m.sym['board']:m.sym['board'] + 64] = fixture
-        call(m, 'draw_gems')
         m.mem.writes.clear()
         # Do not press keys, set scheduling flags, or call the checker directly.
         assert m.value('score', 4) == 12345

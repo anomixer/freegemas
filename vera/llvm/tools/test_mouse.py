@@ -151,7 +151,7 @@ for vera_slot, card_slot in ((2, 4), (2, 5), (4, 5), (2, 0), (4, 0)):
         m.idle_sp = m.cpu.sp
         assert m.mem.ram[0x3F1] == mode
         if card_slot:
-            assert m.mem.lc_ram and m.mem.lc_bank2, 'restore ProDOS LC bank 2'
+            assert not m.mem.lc_ram and m.mem.lc_bank2, 'restore ProDOS LC bank 2 ROM read'
             assert m.clamps == {0: (0, 319), 1: (0, 239)}
             assert m.mode == 1 and m.value('mouse_slot') == card_slot
             ax, ay, bx, by = solution(m.board())

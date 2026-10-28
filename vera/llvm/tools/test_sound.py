@@ -15,15 +15,23 @@ def call(m,name,arg=0):
 for slot in (2,4):
     m=Machine(slot);m.boot_game(1)
     assert m.value('ready')==1,'all original samples must load'
-    # Every sample must stay in one memory domain, never switch VRAM to aux.
+    # Five PCM streams are preloaded into the four VRAM pools, never aux RAM.
+    names=('select','fall','match1','match2','match3')
+    concat=b''.join((VERA/'generated'/f'{name}.pcm').read_bytes() for name in names)
+    assert len(concat)<=109*256,'PCM must fit the 109-page VRAM pool'
     for index in range(5):
         at=m.sym['samples']+index*6
         offset=int.from_bytes(m.mem.ram[at:at+4],'little')
         length=int.from_bytes(m.mem.ram[at+4:at+6],'little')
-        assert offset>=27904 or offset+length<=27904,(slot,index,offset,length)
-    assert int.from_bytes(m.mem.ram[m.sym['samples']+18:m.sym['samples']+22],'little')==27904
-    expected_match2=(VERA/'generated'/'match2.pcm').read_bytes()
-    assert bytes(m.mem.aux[0x2C00:0x2C00+len(expected_match2)])==expected_match2
+        assert offset+length<=109*256,(slot,index,offset,length)
+    assert int.from_bytes(m.mem.ram[m.sym['samples']+24:m.sym['samples']+28],'little')+int.from_bytes(m.mem.ram[m.sym['samples']+28:m.sym['samples']+30],'little')==len(concat)
+    for position,byte in enumerate(concat):
+        page=position>>8
+        if page<72:address=0x14800+(page<<8)
+        elif page<77:address=0x1A300+((page-72)<<8)
+        elif page<101:address=0x1D840+((page-77)<<8)
+        else:address=0x1F100+((page-101)<<8)
+        assert m.mem.vram[address+(position&255)]==byte,(slot,position)
     m.mem.vram[0x1F9C0:0x1FA00]=bytes([0xA5])*64
     m.mem.addr[:]=[0x12345,0x18010];m.mem.inc[:]=[320,40];m.mem.ctrl=3
     saved=(m.mem.addr[:],m.mem.inc[:],m.mem.ctrl)
@@ -72,7 +80,7 @@ for slot in (2,4):
         assert m.read_calls==reads
     call(m,'sound_stop')
     assert not m.mem.reg[28] and not m.mem.pcm_fifo and not m.value('remaining',2)
-    assert not m.value('cursor',4) and not m.value('cached_aux')
+    assert not m.value('cursor',4) and not m.value('initial_fill')
     call(m,'sound_tick');assert not m.mem.pcm_fifo,'stopped sample must not resume'
     call(m,'sound_play',2);m.mem.ram[0x3F3]=0;call(m,'sound_tick')
     assert not m.mem.reg[28] and not m.mem.pcm_fifo

@@ -7,7 +7,7 @@ for slot,mode in ((2,0),(2,1),(4,0),(4,1)):
         if m.cpu.pc==m.sym['loading_draw']:percent.append(m.cpu.a)
         original()
     m.step=step;m.boot_game(mode)
-    files=['ENDLESS.RLE' if mode else 'GAME.RLE','GEM.PAT','MUSIC.FGM','MUSIC.CRV',
+    files=['ENDLESS.RLE' if mode else 'GAME.RLE','GEM.PAT','MUSIC.PSG',
            'SELECT.PCM','FALL.PCM','MATCH1.PCM','MATCH2.PCM','MATCH3.PCM']
     total=sum((entry(m.disk,name)[2]+511)//512 for name in files)
     # LLVM may fold loading_total's constant low byte; do not interpret its
