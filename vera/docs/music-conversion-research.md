@@ -1,14 +1,24 @@
 # VERA PSG 音樂研究與目前取捨
 
-清理說明：目前建置／測試保留純音遊戲曲目、`music_midi_clean.psg` 和 `music_trial.psg`。歷史章節提到的其他比較輸出已從 `generated/` 移除；部分原始 MIDI 來自使用者提供、未納入 repo 的檔案，因此不能保證從乾淨 clone 重建。
+清理說明：**目前建置與遊戲只使用 `generated/music.pcm`（`MUSIC.PCM` 串流）和五個 `generated/*.pcm` 音效**；下面所有 PSG／FM／FGM／VZM 章節都是歷史研究記錄，對應的工具與產物（`build_music.py`、`build_music_vzm.py`、`midi_psg_arrange.py`、`wav2psg.py`、`test_music_vzm.py`、`test_music_conversion.py`、`test_midi_arrangement.py`、`generated/music*.psg`／`*.vzm`／`*.zsm`／`*.h`）已經從 repo 刪除，只剩文字記錄。原始 MIDI `vera/assets/music.mid` 仍保留，作為 `build_music_pcm.py` 的輸入。
 
-## 已接入遊戲：YM2151 FM 版 `MUSIC.VZM`（2026-10-28）
+## 目前狀態：整首串流 PCM（2026-10-29）
+
+使用者聽過 FM 版後要求「全部改成 PCM，像 IIgs 那樣」，且不要管機器有沒有 YM2151。現在的實作：
+
+- `vera/tools/build_music_pcm.py` 讀 `vera/assets/music.mid` → ffmpeg 解碼／`aresample=8011`／`volume=2.0,alimiter=limit=0.70`／`-f s8`，輸出 `vera/generated/music.pcm`：signed 8-bit mono、1012224 bytes、1977 個 ProDOS block、約 126.35 秒，峰值 ±90、rms 37.5。40-sample fade 開頭避免起播爆音。
+- `vera/tools/build_sound.mjs` 用同一取樣率 8011 Hz、`volume=0.35,alimiter=limit=0.29`、`-f s8` 產生五個音效（select 1100、fall 1431、match1／2／3 各 2403 bytes，合計 9740 bytes），全部預載到 VRAM `$14800`。音樂上限 90 + 音效上限 37 = 127，所以在 `pcm_mix` 用 signed 相加不會溢位。
+- 播放：`MUSIC_RATE 21` 對應 AppleWin 的 8010.86 Hz；每 VSYNC 從磁碟串流 133／134 bytes 進 1 KB ring，維持 FIFO 約 1024 bytes 深，音效和音樂共用同一條 FIFO。
+- 沒有 Aux RAM、沒有 PSG、沒有 FM 播放路徑；`fm_detect()` 只在 Intro 顯示 `FM: YM2151 DETECTED (OPM)`／`FM: NONE`，與播放無關。
+- 驗證：`test_music.py`（整份 1012224 bytes、磁碟讀取、OFF／ON、混音、R 重播、Esc 靜音）、`test_sound.py`（五個檔案在 `$14800` 起 byte-exact）、`test_pcm_clock.py`（CPU cycle 推進 FIFO，無 PSG 寫入）、`test_loading_progress.py`（186 blocks），兩 slot 全綠。這些是 65C02／VERA model 比對，本環境 AppleWin 的 `-fm-wav-dump` 只產生全零樣本，**沒有** AppleWin 或實機聽感驗證。
+
+## 歷史：已移除的 YM2151 FM 版 `MUSIC.VZM`（2026-10-28）
 
 新增第二條音樂路徑：機器上有 A2VERA 的 YM2151 時，遊戲播放 `generated/music.vzm`（打包串流，HDV 上為 `MUSIC.VZM`），整首編曲走 8 個 FM 聲道（7 旋律 lead、0–1 bass、2–6 tine），不含 PSG 打擊；沒有晶片或檔案不存在時才回退到下方純音 PSG。
 
 - **轉譜流程（2026-10-28 重做）**：`tools/build_music_vzm.py` 不再解 OGG 做 FFT，而是直接讀取 repo 內的 `assets/music.mid`（原作 OGG 的 MIDI 轉譜，format 0、3175 音符、122.78 秒、無鼓軌）。音高、音符起訖與力度取自 MIDI 音符清單，量化到 60 Hz tick 後指派聲部。因為來源沒有鼓軌，FM 版刻意不做打擊聲部；先前 FFT/onset 版誤判泛音、自行發明 PSG 打擊，是「聽起來亂七八糟」的主要來源。旋律仍不是人工校訂樂譜，也不是原作分軌，但錯誤只可能來自 MIDI 轉譜本身，不再來自音訊分析。
 - **聲部**：低於 MIDI 52 的音分配到 2 個 bass FM 聲道（CON=4，TL 較高、衰減較長）；其他音符優先給目前最高音的 lead 聲道 7，其餘輪流給 tine 聲道 2–6；同一音符由 key-on 到 key-off 固定佔用同一聲道（不因更換旋律而重觸發），8 聲道滿時偷取最早結束的音。8 個音符同時發聲是上限。
-- **ZSM 內容**：7367 個 tick（tick rate 60，約 122.8 秒），10959 次 FM 寫入、0 次 PSG 寫入、432 次 voice steal；未壓縮的 ZSM 為 32428 bytes，VZM 為 28534 bytes（去掉檔頭與 512-byte 記錄補齊、縮短延遲編碼），112 個 logical page。全部塞進 800 KB HDV 後仍有空間同時放 `MUSIC.PSG`。
+- **ZSM 內容**：7367 個 tick（tick rate 60，約 122.8 秒），10959 次 FM 寫入、0 次 PSG 寫入、432 次 voice steal；未壓縮的 ZSM 為 32428 bytes，VZM 為 28534 bytes（去掉檔頭與 512-byte 記錄補齊、縮短延遲編碼），112 個 logical page。全部塞進當時的 800 KB HDV 後仍有空間同時放 `MUSIC.PSG`（現在映像是 2048 KB，且這條路徑已移除）。
 - **音色**：三組 CON=4 patch（bass／tine／lead），frame 0 編程；carrier TL 只依 MIDI 力度在 note-on 寫一次，避免逐 tick 重送。所有 patch 的輸出音量已拉高到與 PSG 後備相近（preview peak 0.867、rms 0.176，無 clipping），不再重現舊版 −26 dBFS 的幾乎無聲。
 - **寄存器去重**：轉換器維護 `fm_last[256]`／`psg_last[64]` 全零基線，只送變更值；`$08`（key mask）永遠送出，因為開關音不需要值相同。播放器在起播與每次 loop 也把 YM `$20–$FF` 清零、PSG 基線設為 `0,0,0,128`，所以去重假設在實機上成立（起播那一個 tick 會送出完整 patch）。
 - **音高換算**：MIDI 音高 → KC 用 `block = midi//12-2`、code 14（C）處理 C，其他用 `block = midi//12-1` 加 `KC_INVERSE = (0,1,2,3,5,6,7,9,10,11,13)`；以 melodius 逐半音實測 MIDI 36–84 誤差 <40 cents。TL 每格約 0.75 dB，音量映射以 8 格 ≈ 6 dB 為單位。
@@ -16,7 +26,7 @@
 - **驗證**：`llvm/tools/test_music_vzm.py` 在 65C02 model 上比對 probe、Intro 文字、`music_init` 的選擇／後備，以及 7368 tick 的 PSG 寄存器影像與 YM2151 寫入順序；兩個 VERA slot 都 byte-exact。客觀聆聽比對：FM preview 與原作 OGG 的分段 chroma 相關係數 0.64–0.77（舊 FFT 版 0.47），99.8% 有聲 frame 覆蓋率，無 clipping。這些都只證明音符內容與播放器一致，**不證明 FM 音色或聽感正確**。
 - **尚未完成**：本環境的 AppleWin 沒有可用音訊裝置（`-fm-wav-dump` 擷取全為靜音），因此仍沒有 AppleWin 或實機試聽；FM 音色只做了基本 carrier/modulator 設定，未逐聲道人工調音，也未加入原作鼓聲。`MUSIC.VZM` 與 `MUSIC.PSG` 的音量仍未互相對齊量測。
 
-## 已採用至遊戲：純音平滑版
+## 歷史：已移除的純音 PSG 版（2026-09）
 
 後續音量追調：遊戲 Music gain 由2改為2.828427，相較前版約+3dB，相較來源PSG約+9dB；量化至VERA LUT，超過每聲道最高511則封頂。編排／音高／事件時間不改，核准的WAV本身未修改。音效预載是另一項尚未完成的工作，不能把音樂aux預載視為PCM音效也已預載。
 

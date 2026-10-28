@@ -12,28 +12,15 @@ add_custom_command(OUTPUT "${LOADING_HEADER}"
   COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/tools/build_loading.py" "${LOADING_HEADER}"
   DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/build_loading.py" "${CMAKE_CURRENT_SOURCE_DIR}/../tools/build_sound.mjs"
     "${CMAKE_CURRENT_SOURCE_DIR}/../generated/game_scene.rle" "${CMAKE_CURRENT_SOURCE_DIR}/../generated/game_endless.rle"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../generated/game_gems_32.idx" "${CMAKE_CURRENT_SOURCE_DIR}/../generated/music_midi_pure_smooth.psg"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../generated/game_gems_32.idx"
     "${CMAKE_CURRENT_SOURCE_DIR}/../generated/select.pcm" "${CMAKE_CURRENT_SOURCE_DIR}/../generated/fall.pcm"
     "${CMAKE_CURRENT_SOURCE_DIR}/../generated/match1.pcm" "${CMAKE_CURRENT_SOURCE_DIR}/../generated/match2.pcm"
     "${CMAKE_CURRENT_SOURCE_DIR}/../generated/match3.pcm" VERBATIM)
-set(MUSIC_HEADER "${CMAKE_CURRENT_BINARY_DIR}/music_data.h")
-add_custom_command(OUTPUT "${MUSIC_HEADER}"
-  COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/../tools/build_music.py" --header "${MUSIC_HEADER}"
-  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../tools/build_music.py" "${CMAKE_CURRENT_SOURCE_DIR}/../generated/music_midi_pure_smooth.psg" VERBATIM)
 set(OUT "${CMAKE_BINARY_DIR}/freegemas.bin")
 set(OUT4 "${CMAKE_BINARY_DIR}/freegemas4.bin")
 set(TITLE "${CMAKE_BINARY_DIR}/title.bin")
 set(TITLE4 "${CMAKE_BINARY_DIR}/title4.bin")
 set(SYSTEM "${CMAKE_BINARY_DIR}/freegemas.sys")
-set(VZM_PLAYER "${CMAKE_BINARY_DIR}/vzm_player.bin")
-set(VZM_PLAYER4 "${CMAKE_BINARY_DIR}/vzm_player4.bin")
-add_custom_command(OUTPUT "${VZM_PLAYER}"
-  COMMAND "${MOS_CLANG}" -Oz -mcpu=mos65c02 -fno-lto -T "${SRC}/link3000.ld" -DVERA_BASE=0xC200 -I "${SRC}" -o "${VZM_PLAYER}" "${SRC}/music.c" "${SRC}/music_aux.S" "${CMAKE_CURRENT_SOURCE_DIR}/tools/vzm_player_stub.c"
-  DEPENDS "${SRC}/music.c" "${SRC}/music_aux.S" "${SRC}/fm_probe.h" "${CMAKE_CURRENT_SOURCE_DIR}/tools/vzm_player_stub.c" "${SRC}/link3000.ld" VERBATIM)
-add_custom_command(OUTPUT "${VZM_PLAYER4}"
-  COMMAND "${MOS_CLANG}" -Oz -mcpu=mos65c02 -fno-lto -T "${SRC}/link3000.ld" -DVERA_BASE=0xC400 -I "${SRC}" -o "${VZM_PLAYER4}" "${SRC}/music.c" "${SRC}/music_aux.S" "${CMAKE_CURRENT_SOURCE_DIR}/tools/vzm_player_stub.c"
-  DEPENDS "${SRC}/music.c" "${SRC}/music_aux.S" "${SRC}/fm_probe.h" "${CMAKE_CURRENT_SOURCE_DIR}/tools/vzm_player_stub.c" "${SRC}/link3000.ld" VERBATIM)
-add_custom_target(vzm_player DEPENDS "${VZM_PLAYER}" "${VZM_PLAYER4}")
 set(HOWTO "${CMAKE_BINARY_DIR}/howto.bin")
 set(HOWTO4 "${CMAKE_BINARY_DIR}/howto4.bin")
 set(OPTION "${CMAKE_BINARY_DIR}/option.bin")
@@ -85,12 +72,12 @@ add_custom_command(OUTPUT "${TITLE_GEMS_GEN}"
   DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/bin2c.mjs" "${CMAKE_CURRENT_SOURCE_DIR}/../generated/title_gems_32.idx" VERBATIM)
 add_custom_command(OUTPUT "${OUT}"
   COMMAND "${MOS_CLANG}" -Oz -mcpu=mos65c02 -T "${SRC}/link3000.ld" -mlto-zp=157 -DVERA_BASE=0xC200
-          -I "${CMAKE_CURRENT_BINARY_DIR}" -o "${OUT}" "${SRC}/main.c" "${SRC}/board.c" "${SRC}/effects.c" "${SRC}/sound.c" "${SRC}/pcm_feed.S" "${SRC}/music.c" "${SRC}/music_aux.S" "${SRC}/mouse.S" "${SRC}/mli.s"
+          -I "${CMAKE_CURRENT_BINARY_DIR}" -o "${OUT}" "${SRC}/main.c" "${SRC}/board.c" "${SRC}/effects.c" "${SRC}/sound.c" "${SRC}/pcm_feed.S" "${SRC}/music.c" "${SRC}/mouse.S" "${SRC}/mli.s"
   DEPENDS "${GEN}" "${PALETTE_GEN}" "${SELECTOR_GEN}" "${GEMS_GEN}" "${SPRITES_GEN}" "${SRC}/main.c" "${SRC}/mouse.S" "${SRC}/mouse.h" "${SRC}/board.c" "${SRC}/mli.s" "${SRC}/board.h" "${SRC}/apple2e.h" "${SRC}/link3000.ld"
   VERBATIM)
 add_custom_command(OUTPUT "${OUT4}"
   COMMAND "${MOS_CLANG}" -Oz -mcpu=mos65c02 -T "${SRC}/link3000.ld" -mlto-zp=157 -DVERA_BASE=0xC400
-          -I "${CMAKE_CURRENT_BINARY_DIR}" -o "${OUT4}" "${SRC}/main.c" "${SRC}/board.c" "${SRC}/effects.c" "${SRC}/sound.c" "${SRC}/pcm_feed.S" "${SRC}/music.c" "${SRC}/music_aux.S" "${SRC}/mouse.S" "${SRC}/mli.s"
+          -I "${CMAKE_CURRENT_BINARY_DIR}" -o "${OUT4}" "${SRC}/main.c" "${SRC}/board.c" "${SRC}/effects.c" "${SRC}/sound.c" "${SRC}/pcm_feed.S" "${SRC}/music.c" "${SRC}/mouse.S" "${SRC}/mli.s"
   DEPENDS "${GEN}" "${PALETTE_GEN}" "${SELECTOR_GEN}" "${GEMS_GEN}" "${SPRITES_GEN}" "${SRC}/main.c" "${SRC}/mouse.S" "${SRC}/mouse.h" "${SRC}/board.c" "${SRC}/mli.s" "${SRC}/board.h" "${SRC}/apple2e.h" "${SRC}/link3000.ld"
   VERBATIM)
 add_custom_command(OUTPUT "${TITLE}"
@@ -111,7 +98,7 @@ add_custom_command(OUTPUT "${OPTION4}" COMMAND "${MOS_CLANG}" -Oz -mcpu=mos65c02
 foreach(IMAGE IN ITEMS "${OUT}" "${OUT4}")
   add_custom_command(OUTPUT "${IMAGE}" APPEND DEPENDS "${MOUSE_GEN}")
   add_custom_command(OUTPUT "${IMAGE}" APPEND DEPENDS "${LOADING_HEADER}" "${SRC}/loading.h")
-  add_custom_command(OUTPUT "${IMAGE}" APPEND DEPENDS "${SRC}/effects.c" "${SRC}/effects.h" "${EFFECTS_DIGITS_GEN}" "${SRC}/sound.c" "${SRC}/sound.h" "${SRC}/pcm_feed.S" "${SRC}/music.c" "${SRC}/music.h" "${SRC}/music_aux.S" "${SRC}/fm_probe.h" "${MUSIC_HEADER}")
+  add_custom_command(OUTPUT "${IMAGE}" APPEND DEPENDS "${SRC}/effects.c" "${SRC}/effects.h" "${EFFECTS_DIGITS_GEN}" "${SRC}/sound.c" "${SRC}/sound.h" "${SRC}/pcm_feed.S" "${SRC}/music.c" "${SRC}/music.h")
 endforeach()
 foreach(IMAGE IN ITEMS "${TITLE}" "${TITLE4}" "${HOWTO}" "${HOWTO4}" "${OPTION}" "${OPTION4}")
   add_custom_command(OUTPUT "${IMAGE}" APPEND DEPENDS ${MENU_MOUSE} "${SRC}/menu_mouse.h" "${SRC}/mouse.h" "${MOUSE_GEN}")
@@ -140,10 +127,9 @@ foreach(INTRO_SLOT IN ITEMS 2 4)
 endforeach()
 add_custom_target(disk
   COMMAND node "${CMAKE_CURRENT_SOURCE_DIR}/../tools/build_sound.mjs"
-  COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/../tools/build_music.py" --header "${MUSIC_HEADER}"
-  COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/../tools/build_music_vzm.py"
+  COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/../tools/build_music_pcm.py"
   COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/tools/build_hdv.py" --cadius "${CADIUS_EXECUTABLE}"
-  DEPENDS freegemas vzm_player "${CMAKE_CURRENT_SOURCE_DIR}/tools/build_hdv.py" "${CADIUS_EXECUTABLE}"
+  DEPENDS freegemas "${CMAKE_CURRENT_SOURCE_DIR}/tools/build_hdv.py" "${CADIUS_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/../assets/prodos-system/PRODOS#FF0000"
     "${CMAKE_CURRENT_SOURCE_DIR}/../assets/prodos-system/CLOCK.SYSTEM#FF0000"
   WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/..")

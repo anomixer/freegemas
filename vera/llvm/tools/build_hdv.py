@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a bootable 800 KB ProDOS HDV for the segmented Freegemas port."""
+"""Create a bootable 2 MB ProDOS HDV for the segmented Freegemas port."""
 from datetime import datetime
 from pathlib import Path
 import subprocess
@@ -49,15 +49,32 @@ def raw_bin(path, expected=0x3000):
 
 def put(disk, alloc, name, typ, aux, data):
     n=(len(data)+511)//512
-    if not 1<=n<=256: raise ValueError(f'{name}: exceeds seedling/sapling capacity')
+    if n < 1: raise ValueError(f'{name}: empty file')
     if n == 1:
         key=alloc.one(); disk[key*BLOCK:key*BLOCK+len(data)]=data; storage=1; total=1
-    else:
+    elif n <= 256:
         key=alloc.one(); index=bytearray(BLOCK)
         for i in range(n):
             b=alloc.one(); index[i]=b&255; index[256+i]=b>>8
             chunk=data[i*BLOCK:(i+1)*BLOCK]; disk[b*BLOCK:b*BLOCK+len(chunk)]=chunk
         disk[key*BLOCK:(key+1)*BLOCK]=index; storage=2; total=n+1
+    else:
+        # Tree file (storage 3): master index -> index blocks -> data blocks.
+        # ProDOS allows this up to 16 MB, which the streamed MUSIC.PCM needs.
+        groups=(n+255)//256
+        if groups > 256: raise ValueError(f'{name}: exceeds ProDOS tree capacity')
+        key=alloc.one(); master=bytearray(BLOCK)
+        for g in range(groups):
+            sub=alloc.one()
+            master[g]=sub&255; master[256+g]=sub>>8
+            index=bytearray(BLOCK)
+            for i in range(min(256, n-g*256)):
+                b=alloc.one(); index[i]=b&255; index[256+i]=b>>8
+                chunk=data[(g*256+i)*BLOCK:(g*256+i+1)*BLOCK]
+                disk[b*BLOCK:b*BLOCK+len(chunk)]=chunk
+            disk[sub*BLOCK:(sub+1)*BLOCK]=index
+        disk[key*BLOCK:(key+1)*BLOCK]=master
+        storage=3; total=n+groups+1
     return dict(name=name, storage=storage, typ=typ, key=key, total=total, eof=len(data), aux=aux)
 
 def entry(vol, offset, f):
@@ -84,7 +101,7 @@ def main(output=None, cadius=None):
         if not path.is_file(): raise FileNotFoundError(f'{description} not found: {path}')
     base.parent.mkdir(parents=True, exist_ok=True)
     if base.exists(): base.unlink()
-    subprocess.run([str(cadius), 'CREATEVOLUME', str(base), 'FREEGEMAS', '800KB'], check=True)
+    subprocess.run([str(cadius), 'CREATEVOLUME', str(base), 'FREEGEMAS', '2048KB'], check=True)
     for system_file in (prodos, clock):
         subprocess.run([str(cadius), 'ADDFILE', str(base), '/FREEGEMAS', str(system_file)], check=True)
     disk=bytearray(base.read_bytes())
@@ -109,8 +126,7 @@ def main(output=None, cadius=None):
     files.append(put(disk,alloc,'HISCORE.DAT',0x06,0,scores))
     for name in ('select','fall','match1','match2','match3'):
         files.append(put(disk,alloc,name.upper()+'.PCM',0x06,0,(vera/'generated'/(name+'.pcm')).read_bytes()))
-    files.append(put(disk,alloc,'MUSIC.PSG',0x06,0,(vera/'generated/music_pure_gained.psg').read_bytes()))
-    files.append(put(disk,alloc,'MUSIC.VZM',0x06,0,(vera/'generated/music.vzm').read_bytes()))
+    files.append(put(disk,alloc,'MUSIC.PCM',0x06,0,(vera/'generated/music.pcm').read_bytes()))
     files.append(put(disk,alloc,'GEM.PAT',0x06,0,(vera/'generated/game_gems_32.idx').read_bytes()))
 
     vol=memoryview(disk)[2*BLOCK:3*BLOCK]; retained=[]

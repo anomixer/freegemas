@@ -7,9 +7,12 @@ for slot,mode in ((2,0),(2,1),(4,0),(4,1)):
         if m.cpu.pc==m.sym['loading_draw']:percent.append(m.cpu.a)
         original()
     m.step=step;m.boot_game(mode)
-    files=['ENDLESS.RLE' if mode else 'GAME.RLE','GEM.PAT','MUSIC.PSG',
-           'SELECT.PCM','FALL.PCM','MATCH1.PCM','MATCH2.PCM','MATCH3.PCM']
-    total=sum((entry(m.disk,name)[2]+511)//512 for name in files)
+    from test_mos import VERA
+    scene = 'game_endless.rle' if mode else 'game_scene.rle'
+    files = ['game_gems_32.idx', 'select.pcm', 'fall.pcm',
+             'match1.pcm', 'match2.pcm', 'match3.pcm', scene]
+    total = sum((VERA.joinpath('generated', name).stat().st_size + 511) // 512
+                for name in files)
     # LLVM may fold loading_total's constant low byte; do not interpret its
     # optimized symbol as an unconditionally materialized uint16 object.
     assert m.value('loading_done',2)==total,(m.value('loading_done',2),total)

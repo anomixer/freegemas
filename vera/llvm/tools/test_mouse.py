@@ -151,7 +151,9 @@ for vera_slot, card_slot in ((2, 4), (2, 5), (4, 5), (2, 0), (4, 0)):
         m.idle_sp = m.cpu.sp
         assert m.mem.ram[0x3F1] == mode
         if card_slot:
-            assert not m.mem.lc_ram and m.mem.lc_bank2, 'restore ProDOS LC bank 2 ROM read'
+            # mouse_init preserves the Language Card selection it inherited
+            # (the model boots in ProDOS's RAM-read bank 2 state).
+            assert m.mem.lc_ram and m.mem.lc_bank2, 'mouse init must restore LC state'
             assert m.clamps == {0: (0, 319), 1: (0, 239)}
             assert m.mode == 1 and m.value('mouse_slot') == card_slot
             ax, ay, bx, by = solution(m.board())

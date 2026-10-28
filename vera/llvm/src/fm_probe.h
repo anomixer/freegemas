@@ -1,6 +1,7 @@
 /* YM2151 BUSY probes, assembled from veratest vera_fm_detect.inc.
  * AI-assisted implementation. Result at $02FF, executable at $0300
- * (page 3 scratch RAM; music_aux_init later mirrors its reader there).
+ * (page 3 scratch RAM; intro uses it only to print which chip is present,
+ * because music playback itself is streamed PCM on every machine).
  *
  * The probe rejects anything whose reserved status bits (2..6) are set, writes
  * $14 = $30 to reset both timer flags, then requires BUSY ($80) to assert and

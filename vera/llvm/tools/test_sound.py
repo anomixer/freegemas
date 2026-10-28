@@ -1,99 +1,109 @@
-"""Verify actual original PCM bytes, FIFO boundaries and game integration."""
-from test_mos import Machine, VERA, move, swap
+"""Original PCM effects preloaded into VERA VRAM, played through the 65C02 mixer.
 
-def playback(name):
-    data=(VERA/'generated'/f'{name}.pcm').read_bytes()
-    return data[:6640] if name in ('match1','match2','match3') else data
+Instrumented model only: bytes are compared, never listened to.
+"""
+from test_mos import Machine, VERA
 
-def call(m,name,arg=0):
-    pc,sp=m.cpu.pc,m.cpu.sp
-    m.cpu.a=arg;m.cpu.stPushWord(0x02FE);m.cpu.pc=m.sym[name]
-    m.until(lambda:m.cpu.pc==0x02FF)
-    assert m.cpu.sp==sp
-    m.cpu.pc=pc
+NAMES = ('select', 'fall', 'match1', 'match2', 'match3')
+# SFX_* -> preloaded sample index.
+SFX = ((0, 'select'), (5, 'fall'), (2, 'match1'), (3, 'match2'), (4, 'match3'))
 
-for slot in (2,4):
-    m=Machine(slot);m.boot_game(1)
-    assert m.value('ready')==1,'all original samples must load'
-    # Five PCM streams are preloaded into the four VRAM pools, never aux RAM.
-    names=('select','fall','match1','match2','match3')
-    concat=b''.join((VERA/'generated'/f'{name}.pcm').read_bytes() for name in names)
-    assert len(concat)<=109*256,'PCM must fit the 109-page VRAM pool'
-    for index in range(5):
-        at=m.sym['samples']+index*6
-        offset=int.from_bytes(m.mem.ram[at:at+4],'little')
-        length=int.from_bytes(m.mem.ram[at+4:at+6],'little')
-        assert offset+length<=109*256,(slot,index,offset,length)
-    assert int.from_bytes(m.mem.ram[m.sym['samples']+24:m.sym['samples']+28],'little')+int.from_bytes(m.mem.ram[m.sym['samples']+28:m.sym['samples']+30],'little')==len(concat)
-    for position,byte in enumerate(concat):
-        page=position>>8
-        if page<72:address=0x14800+(page<<8)
-        elif page<77:address=0x1A300+((page-72)<<8)
-        elif page<101:address=0x1D840+((page-77)<<8)
-        else:address=0x1F100+((page-101)<<8)
-        assert m.mem.vram[address+(position&255)]==byte,(slot,position)
-    m.mem.vram[0x1F9C0:0x1FA00]=bytes([0xA5])*64
-    m.mem.addr[:]=[0x12345,0x18010];m.mem.inc[:]=[320,40];m.mem.ctrl=3
-    saved=(m.mem.addr[:],m.mem.inc[:],m.mem.ctrl)
-    for effect,name in ((0,'select'),(5,'fall'),(2,'match1'),(3,'match2'),(4,'match3')):
-        m.mem.pcm_writes.clear();m.mem.writes.clear()
-        reads_before=m.read_calls
-        call(m,'sound_play',effect)
-        assert m.mem.reg[28]==29 and m.mem.reg[27]&63==47
-        for frame in range(80):
-            # Advance model playback by a frame, then execute actual refill.
-            m.mem[m.mem.base+7]=1
-            call(m,'sound_tick')
-            if not m.mem.reg[28]:break
-        else:raise AssertionError('sample must drain and stop')
-        expected=playback(name)
-        assert bytes(m.mem.pcm_writes)==expected,(slot,name,len(m.mem.pcm_writes),len(expected))
-        assert not (m.mem.reg[27]&15),'EOF must mute PCM, not hold its last sample'
-        assert m.read_calls==reads_before,'playing cached PCM must not read disk'
-        assert not m.mem.writes and (m.mem.addr,m.mem.inc,m.mem.ctrl)==saved
-        assert m.mem.vram[0x1F9C0:0x1FA00]==bytes([0xA5])*64
-    # AppleWin drops a lone low byte when a 16-bit FIFO underruns. A full
-    # 4095-byte FIFO leaves an odd source cursor: refill must replay that low
-    # byte rather than treating the high byte as the next sample's low byte.
-    for effect,name in ((3,'match2'),(4,'match3')):
-        call(m,'sound_play',effect)
-        assert len(m.mem.pcm_fifo)==4095
-        m.mem.pcm_fifo.clear() # long CPU gap; hardware consumed/discarded tail
-        m.mem.pcm_writes.clear()
-        call(m,'sound_tick')
-        expected=playback(name)
-        assert bytes(m.mem.pcm_writes)==expected[4094:4094+len(m.mem.pcm_writes)],'underrun shifted 16-bit byte alignment'
-    # Force a cascade before each previous effect has drained. The new FIFO
-    # and every subsequent refill must contain only the replacement sample.
-    call(m,'sound_play',2)
-    for effect,name in ((3,'match2'),(4,'match3')):
-        assert m.mem.pcm_fifo,'previous effect still playing'
-        resets=m.mem.pcm_resets;reads=m.read_calls
-        m.mem.pcm_writes.clear()
-        call(m,'sound_play',effect)
-        expected=playback(name)
-        assert m.mem.pcm_resets==resets+1
-        assert bytes(m.mem.pcm_fifo)==expected[:len(m.mem.pcm_fifo)]
-        for frame in range(3):
-            m.mem[m.mem.base+7]=1;call(m,'sound_tick')
-        assert bytes(m.mem.pcm_writes)==expected[:len(m.mem.pcm_writes)],'old effect leaked after replacement'
-        assert m.read_calls==reads
-    call(m,'sound_stop')
-    assert not m.mem.reg[28] and not m.mem.pcm_fifo and not m.value('remaining',2)
-    assert not m.value('cursor',4) and not m.value('initial_fill')
-    call(m,'sound_tick');assert not m.mem.pcm_fifo,'stopped sample must not resume'
-    call(m,'sound_play',2);m.mem.ram[0x3F3]=0;call(m,'sound_tick')
+
+def call(m, name, arg=0):
+    pc, sp = m.cpu.pc, m.cpu.sp
+    m.cpu.a = arg
+    m.cpu.stPushWord(0x02FE)
+    m.cpu.pc = m.sym[name]
+    m.until(lambda: m.cpu.pc == 0x02FF)
+    assert m.cpu.sp == sp
+    m.cpu.pc = pc
+
+
+def tick(m):
+    if m.mem.reg[28]:
+        samples = round(m.mem.reg[28] * 48828.125 / 128 / 60)
+        del m.mem.pcm_fifo[:samples]
+    call(m, 'music_tick')
+
+
+def samples_table(m):
+    table = m.sym['samples']
+    rows = []
+    for i in range(5):
+        at = table + i * 6
+        offset = int.from_bytes(m.mem.ram[at:at + 4], 'little')
+        length = int.from_bytes(m.mem.ram[at + 4:at + 6], 'little')
+        rows.append((offset, length))
+    return rows
+
+
+for slot in (2, 4):
+    m = Machine(slot)
+    m.boot_game(1)
+    assert m.value('ready') == 1, 'all original samples must load'
+
+    rows = samples_table(m)
+    total = 0
+    for index, (offset, length) in enumerate(rows):
+        want = (VERA / 'generated' / f'{NAMES[index]}.pcm').read_bytes()
+        assert length == len(want), (slot, index, length, len(want))
+        assert offset == 0x14800 + total, (slot, index, hex(offset))
+        assert bytes(m.mem.vram[offset:offset + length]) == want, (slot, NAMES[index])
+        total += length
+    assert 0x14800 + total <= 0x19000, 'PCM pool must stay below the cursor patterns'
+
+    # The sound option gates playback: OFF queues nothing at all.
+    m.mem.ram[0x3F3] = 0
+    call(m, 'sound_play', 2)
+    assert m.value('effect_remaining', 2) == 0
+    m.mem.ram[0x3F3] = 1
+
+    # Each effect starts at its own sample and lasts exactly its file length.
+    for sfx, name in SFX:
+        call(m, 'sound_play', sfx)
+        index = NAMES.index(name)
+        assert m.value('effect_source', 4) == rows[index][0], (slot, name)
+        assert m.value('effect_remaining', 2) == rows[index][1], (slot, name)
+
+    # A newer effect replaces the old one instead of mixing both.
+    call(m, 'sound_play', 2)
+    call(m, 'sound_play', 4)
+    assert m.value('effect_source', 4) == rows[4][0]
+    assert m.value('effect_remaining', 2) == rows[4][1]
+
+    # Unknown effect numbers are ignored.
+    before = (m.value('effect_source', 4), m.value('effect_remaining', 2))
+    for sfx in (1, 6, 7, 8, 255):
+        call(m, 'sound_play', sfx)
+    assert (m.value('effect_source', 4), m.value('effect_remaining', 2)) == before
+
+    # Staging reads VRAM through port 0; the graphics port and both address
+    # ports come back untouched, and the music stream keeps the only open file.
+    for _ in range(8):
+        tick(m)
+    m.mem.addr[:] = [0x12345, 0x18010]
+    m.mem.inc[:] = [320, 40]
+    m.mem.ctrl = 3
+    saved = (list(m.mem.addr), list(m.mem.inc), m.mem.ctrl)
+    psg = bytes(m.mem.vram[0x1F9C0:0x1FA00])
+    m.mem.vram[0x1F9C0:0x1FA00] = bytes([0xA5]) * 64
+    epoch = m.value('disk_epoch_value')
+    call(m, 'sound_play', 3)
+    for _ in range(30):
+        tick(m)
+    assert (list(m.mem.addr), list(m.mem.inc), m.mem.ctrl) == saved, 'graphics port disturbed'
+    assert m.value('disk_epoch_value') == epoch, 'a cached effect must not reopen files'
+    assert m.value('disk_size', 4) == 1012224, 'the music stream owns the only open file'
+    assert m.mem.vram[0x1F9C0:0x1FA00] == bytes([0xA5]) * 64, 'PSG registers untouched'
+    m.mem.vram[0x1F9C0:0x1FA00] = psg
+    assert m.value('effect_remaining', 2) == 0, 'effect must drain by itself'
+
+    # Esc stops everything before handing back to the loader.
+    call(m, 'sound_stop')
+    assert m.value('effect_remaining', 2) == 0
+    m.mem.ram[0xC000] = 0x9B
+    m.until(lambda: m.cpu.pc == 0x2000)
     assert not m.mem.reg[28] and not m.mem.pcm_fifo
-    sent=len(m.mem.pcm_writes);call(m,'sound_play',0)
-    assert len(m.mem.pcm_writes)==sent
-    m.mem.ram[0x3F3]=1;call(m,'sound_play',0);assert m.mem.reg[28]==29
-    # Unsupported invented effects must not alter PCM playback.
-    state=(m.mem.reg[28],bytes(m.mem.pcm_fifo),m.mem.pcm_resets)
-    for effect in (1,6,7,8):call(m,'sound_play',effect)
-    assert state==(m.mem.reg[28],bytes(m.mem.pcm_fifo),m.mem.pcm_resets)
-    call(m,'sound_stop')
-    move(m,4,3);swap(m)
-    m.mem.ram[0xC000]=0x9B
-    m.until(lambda:m.cpu.pc==0x2000)
-    assert not m.mem.reg[28] and not m.mem.pcm_fifo
-    print(f'PASS slot {slot}: five original PCM streams byte-exact, match2/3 underrun realignment, FIFO bounded/drained, OFF/ON, graphics/PSG untouched, swap/exit')
+    m.return_loader()
+    print(f'PASS slot {slot}: five original PCM streams byte-exact in VRAM, '
+          f'{total} bytes, OFF/ON, replacement, drain, silent Esc', flush=True)

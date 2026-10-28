@@ -1,67 +1,74 @@
-/* Preprocessed so VERA_BASE follows the selected slot. */
+/* Preprocessed so VERA_BASE follows the selected slot.
+ *
+ * pcm_copy  copy pcm_count bytes from pcm_pointer into the PCM FIFO
+ * pcm_mix   add pcm_count effect bytes at pcm_effect to the music bytes at
+ *           pcm_pointer and write the signed 8-bit sum into the FIFO
+ *
+ * Both runs may straddle a 256-byte page: X/Y carry the low byte and the
+ * patched high byte is incremented when the index wraps.  The music/effect
+ * peaks are limited at build time so the sum cannot wrap.  The FIFO is only
+ * probed once per run: the player never queues more than one VSYNC worth of
+ * samples on top of its safety margin, so a run cannot overflow mid-way.
+ * pcm_count keeps what was not sent (0..255).
+ */
         .section .text
         .global pcm_copy
-        .global pcm_vram_copy
-pcm_vram_copy:
-        LDX pcm_count
-        LDY #0
-pcm_vram_next:
-        LDA VERA_BASE+27
-        BMI pcm_vram_done
-        LDA VERA_BASE+4
-        STA VERA_BASE+29
-        INY
-        DEX
-        BNE pcm_vram_next
-        CPY #0
-        BNE pcm_partial
-        DEC pcm_count+1
-        RTS
-pcm_vram_done:
-        CPY #0
-        BNE pcm_partial
-        RTS
+        .global pcm_mix
 pcm_copy:
-        LDA pcm_pointer
-        STA pcm_load+1
         LDA pcm_pointer+1
         STA pcm_load+2
-pcm_page:
-        LDX #0
-        LDA pcm_count+1
-        BNE pcm_begin
-        LDX pcm_count
+        LDY pcm_pointer
+        LDA pcm_count
+        STA pcm_left
         BEQ pcm_done
-pcm_begin:
-        LDY #0
-pcm_next:
         LDA VERA_BASE+27
         BMI pcm_done
+pcm_next:
 pcm_load:
-        LDA $FFFF,Y
+        LDA $FF00,Y
         STA VERA_BASE+29
         INY
-        DEX
-        BNE pcm_next
-        CPY #0
-        BNE pcm_partial
-        DEC pcm_count+1
+        BNE pcm_no_wrap
         INC pcm_load+2
-        JMP pcm_page
+pcm_no_wrap:
+        DEC pcm_left
+        BNE pcm_next
 pcm_done:
-        CPY #0
-        BEQ pcm_return
-pcm_partial:
-        TYA
-        STA pcm_sent
-        LDA pcm_count
-        SEC
-        SBC pcm_sent
+        LDA pcm_left
         STA pcm_count
-        LDA pcm_count+1
-        SBC #0
-        STA pcm_count+1
-pcm_return:
+        RTS
+pcm_mix:
+        LDA pcm_pointer+1
+        STA mix_load+2
+        LDA pcm_effect+1
+        STA mix_eff+2
+        LDY pcm_pointer
+        LDX pcm_effect
+        LDA pcm_count
+        STA pcm_left
+        BEQ mix_done
+        LDA VERA_BASE+27
+        BMI mix_done
+mix_next:
+mix_load:
+        LDA $FF00,Y
+        CLC
+mix_eff:
+        ADC $FF00,X
+        STA VERA_BASE+29
+        INY
+        BNE mix_no_y_wrap
+        INC mix_load+2
+mix_no_y_wrap:
+        INX
+        BNE mix_no_x_wrap
+        INC mix_eff+2
+mix_no_x_wrap:
+        DEC pcm_left
+        BNE mix_next
+mix_done:
+        LDA pcm_left
+        STA pcm_count
         RTS
         .section .bss
-pcm_sent: .byte 0
+pcm_left: .byte 0

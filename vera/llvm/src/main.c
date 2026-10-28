@@ -1,4 +1,4 @@
-﻿#include <stdint.h>
+#include <stdint.h>
 #include "apple2e.h"
 #include "board.h"
 #include "game_palette.h"
@@ -76,7 +76,6 @@ static void waitvsync(void) {
     VERA.irq_flags = VERA_IRQ_VSYNC;
     effects_tick();
     music_tick();
-    sound_tick();
     timer_frame();
 }
 
@@ -222,7 +221,12 @@ static void palette(void) {
 
 static uint8_t *const disk_path = (uint8_t *)0x0B00;
 static uint8_t disk_ref, disk_open;
+static uint8_t disk_epoch_value;
 static uint32_t disk_size;
+
+/* Music keeps MUSIC.PCM open across the game, but any other OPEN closes it.
+ * The generation counter lets music_tick notice and reopen before reading. */
+uint8_t disk_epoch(void) { return disk_epoch_value; }
 
 static void disk_close_file(void) {
     if (!disk_open) return;
@@ -261,6 +265,7 @@ uint8_t disk_file(const char *name, uint8_t len, uint16_t *key, uint32_t *size) 
     if (mli_status) return 0;
     disk_ref = mli_open_params[5];
     disk_open = 1;
+    ++disk_epoch_value;
     mli_eof_params[1] = disk_ref;
     mli_get_eof();
     if (mli_status) { disk_close_file(); return 0; }
@@ -293,6 +298,26 @@ void disk_read(uint16_t block, uint8_t *dest) {
     mli_read();
     if (mli_status == 0 && (mli_read_params[6] != (uint8_t)count
         || mli_read_params[7] != (uint8_t)(count >> 8))) mli_status = 0x4C;
+}
+
+/* Sequential READ: continues where the previous READ stopped.  The music
+ * streamer SET_MARKs once per loop instead of once per 512-byte block.  The
+ * transferred count is returned instead of forcing status $4C on a short
+ * read: ProDOS is allowed to satisfy less than the request (and some versions
+ * cap READ at one block), and the streamer just queues what came back. */
+uint16_t disk_read_seq(uint16_t count, uint8_t *dest) {
+    uintptr_t p;
+    if (!disk_open) { mli_status = 0x4C; return 0; }
+    p = (uintptr_t)dest;
+    mli_read_params[1] = disk_ref;
+    mli_read_params[2] = (uint8_t)p;
+    mli_read_params[3] = (uint8_t)(p >> 8);
+    mli_read_params[4] = (uint8_t)count;
+    mli_read_params[5] = (uint8_t)(count >> 8);
+    mli_read_params[6] = mli_read_params[7] = 0;
+    mli_read();
+    if (mli_status) return 0;
+    return (uint16_t)mli_read_params[6] | ((uint16_t)mli_read_params[7] << 8);
 }
 
 static void upload_scene(void) {

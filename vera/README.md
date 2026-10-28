@@ -4,7 +4,7 @@ English | [繁體中文](README-tw.md)
 
 An Apple //e VERA port of Freegemas, compiled to 65C02 code with LLVM-MOS. Graphics use a 320×240 8bpp bitmap, persistent hardware gem sprites, and a top-edge mask. A small resident ProDOS loader loads the title, game, instructions, and options as separate programs.
 
-The bootable 800 KB disk image is [freegemas.hdv](freegemas.hdv).
+The bootable 2,048 KB disk image is [freegemas.hdv](freegemas.hdv).
 
 ## Requirements and build
 
@@ -20,7 +20,7 @@ cmake --build vera\llvm\build --target disk --parallel 4
 
 The SDK defaults to `C:/dev/llvm-mos-sdk/install`. Configure CMake with `-DLLVM_MOS_SDK=...` to use another location. Assets come from the original `media/` directory. The build produces VERA slot 2 and slot 4 programs and packages them into `vera/freegemas.hdv`.
 
-Use a 128 KB Apple IIe with VERA-enabled AppleWin or compatible hardware. Without auxiliary RAM, music and sound effects are safely disabled. Example for VERA-enabled AppleWin:
+Use a 128 KB Apple IIe with VERA-enabled AppleWin or compatible hardware. No auxiliary RAM is needed: music is streamed from disk through a small main-RAM ring and effects are preloaded into VERA VRAM. Example for VERA-enabled AppleWin:
 
 ```powershell
 AppleWin.exe -s2 vera -s7 hdc -h1 C:\dev\freegemas\vera\freegemas.hdv
@@ -61,19 +61,17 @@ Options displays separate Time Trial and Endless high scores. Pending records ar
 
 ## Audio and loading
 
-Sound effects come from the original `select.ogg`, `fall.ogg`, and `match1–3.ogg`, converted to 16-bit mono VERA PCM at rate 29 (approximately 11062.622 Hz), retaining original gains of 0.3/0.25. No extra Hint, Reset, or Game Over sounds are added.
+Sound effects come from the original `select.ogg`, `fall.ogg`, and `match1–3.ogg`. They are converted to signed 8-bit mono VERA PCM at rate 21 (8010.86 Hz) with the original gains, and the whole set totals 9,740 bytes. The five streams are preloaded into VERA VRAM starting at `$14800`, so playback needs no disk reads and no auxiliary RAM.
 
-All five converted effects (with `match1–3` truncated at build time to the first 6,640 bytes / ~0.30 seconds, totaling 26,912 bytes) fit entirely into the 27,904-byte VERA VRAM preload pool. Playback performs no disk reads and uses no auxiliary RAM. The CPU still refills the fixed approximately 4 KB FIFO, so preloading does not eliminate every possible processing delay. Underrun recovery restores 16-bit sample alignment before resuming playback.
+A single VERA PCM FIFO carries both music and effects, so the game mixes them in software: build-time limiting holds music peaks at ±90 and effects at ±37, so the signed 8-bit sum can never wrap. Staging an effect reads VRAM through port 0 and restores both address ports and the control register, so graphics state survives mixing. Effects replace each other but always add on top of the music.
 
-New effects interrupt old ones; overlapping mixing and title/options navigation sounds are not implemented. This is **not a 100% reproduction of the original audio**: sample rate, channels, mixing, and match tails differ.
+Music is now one streamed PCM track on every VERA machine, IIgs style. `MUSIC.PCM` is 1,012,224 bytes (1,977 ProDOS blocks, 126.35 seconds). `tools/build_music_pcm.py` renders it with ffmpeg (linear-interp resample to 8,011 Hz, gain, limiter at 0.70, 40-sample fade); the game streams it from disk through a 1 KB ring buffer, keeping the FIFO about 1,024 bytes deep and topping it up with 133/134 samples per VSYNC. One SET_MARK per loop and sequential MLI reads up to 1 KB keep disk traffic low; short reads fall back to a 512-byte read. The track loops forever.
 
-Music has two paths. On a machine with the A2VERA FM daughterboard the boot intro probes the YM2151 and reports `FM: YM2151 DETECTED (OPM)`; the game then loads `MUSIC.VZM` (a packed ZSM stream, 28,534 bytes, 7,367 VSYNC ticks, about 122.8 seconds) and plays the whole arrangement on eight FM channels: channel 7 is the melody lead, channels 0–1 the bass and channels 2–6 the tine accompaniment. Without the chip, or when `MUSIC.VZM` is missing, it reports `FM: NONE, PSG MUSIC ONLY` and keeps the PSG stream below. `tools/build_music_vzm.py` builds the stream from `assets/music.mid`, the MIDI transcription of `media/music.ogg`: pitch, note boundaries and velocity come straight from the note list instead of an FFT pitch/onset analysis, and because that MIDI has no drum track the FM stream carries no percussion. The 71-byte BUSY probe used by both the intro and the player lives in `llvm/src/fm_probe.h`. The whole VZM is preloaded into auxiliary RAM (112 logical pages), so playback performs no disk reads, and both `MUSIC.PSG` and `MUSIC.VZM` ship on the HDV.
+The YM2151 probe is informational only now: the intro prints `FM: YM2151 DETECTED (OPM)` or `FM: NONE`, but playback is identical either way. There is no FM or PSG music path, no `MUSIC.VZM` or `MUSIC.PSG` on the image, and no auxiliary-RAM music preload.
 
-The fallback path uses the selected smooth, pure-melody PSG arrangement (+9 dB gain, `generated/music_pure_gained.psg`, 56,675 bytes across 7,398 frames, approximately 123.3 seconds) played as a direct raw `MUSIC.PSG` stream without runtime Huffman curve decompression. It is preloaded across Apple IIe auxiliary RAM (`$0800–$BFFF`, 46 KB) and Auxiliary Language Card Bank 1 (`$D000–$FFFF`, 12 KB continuous), freeing main RAM and requiring no music disk reads during gameplay.
+Music and PCM effects have independent ON/OFF settings. Music plays only during gameplay; R restarts it and Esc mutes, closes the file, and hands the disk back to the loader. Sound OFF does not stop the music.
 
-Music and PCM effects have independent ON/OFF settings. Music plays only during gameplay; R restarts it and Esc stops audio. `MUSIC.VZM` reaches the FM chip with key-off and zeroed operator registers on start and on every loop, which is a one-time ~44 kcycle (about 43 ms) cost on those two ticks; ordinary ticks average about 750 cycles.
-
-After the game binary starts, `LOADING GAME...` shows an asset-loading progress bar for gems, scene, music, and effects. It reaches 100% when the board is ready, with `GAME START` underneath. The game binary itself loads with the text-only message.
+After the game binary starts, `LOADING GAME...` shows an asset meter for gems, scene, and the five effects; it reaches 100% when the board is ready, with `GAME START` underneath. `MUSIC.PCM` is not part of that meter because it streams during play. The game binary itself loads with the text-only message.
 
 ## Project layout
 
@@ -88,22 +86,22 @@ After the game binary starts, `LOADING GAME...` shows an asset-loading progress 
 
 ## Audio conversion experiments
 
-Earlier WAV-to-PSG and MIDI experiments are documented in [music-conversion-research.md](docs/music-conversion-research.md). `tools/wav2psg.py` approximates notes/percussion from the original OGG; it is not a lossless recording conversion. `tools/midi_psg_arrange.py` contains other experimental arrangements. `tools/build_music_vzm.py` builds the shipped `MUSIC.VZM` from the MIDI note list in `assets/music.mid`. Listening previews and analysis outputs go in `llvm/build/`.
+`tools/build_music_pcm.py` and `tools/build_sound.mjs` are the only audio converters in the build now. Earlier WAV-to-PSG, MIDI, and YM2151 experiments (with their historical filenames) are documented in [music-conversion-research.md](docs/music-conversion-research.md); those tools and `MUSIC.PSG`/`MUSIC.VZM` no longer exist in the tree. Listening previews and analysis outputs go in `llvm/build/`.
 
 ## Regression tests
 
 ```powershell
 python -m pip install py65 numpy
-python -u vera\llvm\tools\test_music_vzm.py
 python -u vera\llvm\tools\test_mos.py
 python -u vera\llvm\tools\test_sound.py
 python -u vera\llvm\tools\test_music.py
+python -u vera\llvm\tools\test_pcm_clock.py
 python -u vera\llvm\tools\test_mouse.py
 python -u vera\llvm\tools\test_vera_detect.py
 ```
 
 Tests execute compiled 65C02 binaries against instrumented VERA, ProDOS, and Mouse Card firmware models. Coverage includes both VERA slots, cascades, local updates, hints, timing, high scores, audio streams, menus, and mouse swaps/drags. Private in-memory disk copies keep synthetic scores out of the delivered image. Model tests supplement, but do not replace, AppleWin and hardware testing.
 
-`test_music_vzm.py` is self-contained: it drives the intro probe, `music_init()` file selection, and the whole VZM decoder on the model for both slots, checking the PSG register image, the exact YM2151 write order, the loop, and stop/OFF silence. It compares 7,368 ticks byte-exactly and does not prove how the FM chip sounds.
+`test_music.py` streams the whole 1,012,224-byte `MUSIC.PCM` byte-exactly on both slots, then checks disk reads, loop point, OFF/ON, effect mixing sample by sample, R restart, and silent Esc. `test_sound.py` verifies the five effects byte-exactly in VRAM, their table offsets, OFF/ON, replacement, drain, port preservation, and that an effect never reopens the disk. `test_pcm_clock.py` drains the FIFO per CPU cycle at 8,010.86 Hz and compares the rendered stream with the source PCM, including a 230 ms starvation gap and a mixed effect window.
 
-The model now emulates the file-level ProDOS MLI calls the resident loader uses (`GET_PREFIX` `$C7`, `OPEN` `$C8`, `READ` `$CA`, `WRITE` `$CB`, `SET_MARK` `$CE`, `GET_EOF` `$D1`, `CLOSE` `$CC`, `QUIT` `$65`) on top of block reads/writes (`$80`/`$81`), so the full cold-boot, title and in-game paths run in the harness again. `test_music.py` now plays the shipped raw `MUSIC.PSG` fallback and checks 7,398 frames byte-exactly; `test_sound.py` checks the five PCM streams in the four VRAM preload pools; `test_loading_progress.py` counts the assets the disk actually carries. All of these are still model runs, not AppleWin or hardware verification.
+The model also emulates the file-level ProDOS MLI calls the resident loader uses (`GET_PREFIX` `$C7`, `OPEN` `$C8`, `READ` `$CA`, `WRITE` `$CB`, `SET_MARK` `$CE`, `GET_EOF` `$D1`, `CLOSE` `$CC`, `QUIT` `$65`) on top of block reads/writes (`$80`/`$81`), so the full cold-boot, title and in-game paths run in the harness again. `test_loading_progress.py` counts the 186 asset blocks the disk actually carries. All of these are still model runs, not AppleWin or hardware verification.

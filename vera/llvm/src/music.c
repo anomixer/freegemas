@@ -1,155 +1,217 @@
-/* Background music: raw PSG stream, or YM2151 (FM) + PSG percussion.
+/* Background music: streamed signed 8-bit PCM (MUSIC.PCM).
  *
- * With a YM2151 daughterboard the game loads MUSIC.VZM, a ZSM stream that the
- * VSYNC tick decodes directly:
+ * VERA has a single PCM FIFO and the sound effects share it, so the game
+ * feeds one 8-bit stream: music bytes read from disk plus the active effect,
+ * added sample by sample.  The two sources are limited to 0.70 and 0.29 of
+ * full scale at build time, so the sum always fits signed 8-bit without a
+ * clamp.
  *
- *   $00-$7F  delay       consume this tick, wait N more
- *   $80-$BF  PSG write   register = byte & $3F, next byte value
- *   $C0-$DF  FM batch    count = (byte & $1F) + 1, then count x (reg, value)
- *   $E0-$FE  padding     skipped, consumes no tick
- *   $FF      end         loop back to offset 0
- *
- * Without the chip MUSIC.PSG (one frame per tick, 16 voices) is loaded
- * instead, so the game keeps its original music on stock machines.
- *
- * Both streams are preloaded into Aux RAM and Aux Language Card Bank 1 by
- * music_aux.S; playback never touches the disk.
+ * The FIFO is kept about two VSYNC frames deep: enough slack for a slow match
+ * cascade, but small enough that an effect is not audibly late.  A small RAM
+ * ring is topped up from MUSIC.PCM every few frames; the disk is never read to
+ * fill the FIFO directly.
  */
 #include <stdint.h>
 #include "apple2e.h"
 #include "music.h"
-#include "loading.h"
+#include "sound.h"
+
 #define MUSIC_SETTING (*(volatile uint8_t *)0x03F2)
+#define MUSIC_RING   1024u       /* staging ring, one block plus slack */
+#define MUSIC_BUFFER 1024u       /* samples queued (~128 ms at rate 21) */
+#define MUSIC_RATE   21u         /* 21 * 25e6 / 512 / 128 = 8010.86 Hz */
+#define MUSIC_VOLUME 0x0Fu       /* mono 8-bit, volume 15 */
+
 extern uint8_t mli_status;
-extern void disk_read(uint16_t block,uint8_t *dest);
-extern uint8_t disk_file(const char *name,uint8_t length,uint16_t *key,uint32_t *size);
-extern void music_aux_init(void),music_aux_store(void),music_aux_page(void);
-extern uint8_t music_aux_available(void);
-uint8_t music_cache[256],music_page,music_aux_top;
-uint8_t *music_source;
-uint8_t music_destination_page;
-uint8_t music_fm;
+extern void disk_read(uint16_t block, uint8_t *dest);
+extern uint16_t disk_read_seq(uint16_t count, uint8_t *dest);
+extern uint8_t disk_file(const char *name, uint8_t length, uint16_t *key, uint32_t *size);
+extern void disk_close(void);
+extern uint8_t disk_epoch(void);
+extern void pcm_copy(void), pcm_mix(void);
+extern uint16_t pcm_count;
+extern uint8_t *pcm_pointer;
+extern uint8_t *pcm_effect;
 
-static uint8_t *const disk_buffer=(uint8_t *)0x0C00;
-static uint16_t music_position;
-static uint32_t music_size;
-static uint8_t music_ready,music_on,cache_page,music_delay;
+static uint8_t ring[MUSIC_RING];
+static const uint8_t silence[256];
+static uint16_t ring_read, ring_count;
+static uint32_t music_size, music_file_pos, music_mark;
+static uint8_t music_ready, music_on, music_mark_ok;
+static uint8_t music_epoch, music_fd;
+static uint8_t budget_phase;
 
-static void psg_write(uint8_t reg,uint8_t value) {
-    VERA.address=(uint16_t)(0xF9C0u+reg);VERA.address_hi=1;VERA.data0=value;
-}
-
-/* ---------------------------- YM2151 helpers ----------------------------- */
-static void fm_reg(uint8_t reg,uint8_t value) {
-    VERA_YM_REG=reg;VERA_YM_DATA=value;
-}
-static void fm_key_off_all(void) {
-    uint8_t channel;
-    for(channel=0;channel<8;channel++)fm_reg(YM_KEY_REG,channel);
-}
-/* MUSIC.VZM was de-duplicated against an all-zero YM2151 register image, so
- * the chip has to be cleared before playback and whenever the stream loops. */
-static void fm_silence(void) {
-    uint16_t reg;
-    fm_key_off_all();
-    for(reg=0x20;reg<0x100;reg++)fm_reg((uint8_t)reg,0);
-}
-
-#include "fm_probe.h"
-/* Runs the BUSY probe from page 3 scratch RAM; leaves the result at $02FF. */
-static uint8_t fm_detect(void) {
-    volatile uint8_t *scratch=(volatile uint8_t *)0x0300;
-    uint8_t i;
-    for(i=0;i<sizeof(fm_probe);i++)scratch[i]=fm_probe[i];
-    ((void(*)(void))0x0300)();
-    return *(volatile uint8_t *)0x02FF;
+/* ProDOS closes the previous file whenever another one is opened, so the
+ * epoch reported by main.c tells us that our refnum is gone. */
+static uint8_t open_file(void) {
+    uint16_t key;
+    uint32_t size;
+    if (music_fd && disk_epoch() == music_epoch) return 1;
+    mli_status = 0;
+    if (!disk_file("MUSIC.PCM", 9, &key, &size)) { music_fd = 0; return 0; }
+    music_size = size;
+    music_fd = 1;
+    music_epoch = disk_epoch();
+    music_file_pos = 0;
+    music_mark = 0;
+    music_mark_ok = 0;
+    return 1;
 }
 
-/* Zero the PSG (all sixteen voices) and the FM chip. */
-static void music_clear(void) {
-    uint8_t channel;
-    VERA.address=0xF9C0;VERA.address_hi=VERA_INC_1|1;
-    for(channel=0;channel<16;channel++){VERA.data0=0;VERA.data0=0;VERA.data0=0;VERA.data0=128;}
-    if(music_fm)fm_silence();
+static uint8_t read_block(void) {
+    uint32_t offset;
+    uint16_t want, got;
+    if (!music_fd) return 0;
+    if (music_file_pos >= music_size) music_file_pos = 0;   /* seamless loop */
+    offset = music_file_pos;
+    want = music_size - offset > MUSIC_RING ? MUSIC_RING : (uint16_t)(music_size - offset);
+    if (music_mark_ok && offset == music_mark) {
+        mli_status = 0;
+        got = disk_read_seq(want, ring);
+        if (!got) {             /* the mark may be unusable; restart from here */
+            disk_read((uint16_t)(offset >> 9), ring);
+            if (mli_status) return 0;
+            got = music_size - offset > 512u ? 512u : (uint16_t)(music_size - offset);
+        }
+    } else {
+        disk_read((uint16_t)(offset >> 9), ring);
+        if (mli_status) return 0;
+        got = music_size - offset > 512u ? 512u : (uint16_t)(music_size - offset);
+    }
+    if (!got) return 0;
+    ring_read = 0;
+    ring_count = got;
+    music_file_pos = offset + got;
+    music_mark = offset + got;
+    music_mark_ok = 1;
+    return 1;
 }
 
-static inline __attribute__((always_inline)) uint8_t event_byte(void) {
-    uint8_t page=(uint8_t)(8u+(music_position>>8)),value;
-    if((uint32_t)music_position>=music_size){music_ready=0;return 0;}
-    if(page!=cache_page) {music_page=page;music_aux_page();cache_page=page;}
-    value=music_cache[(uint8_t)music_position];++music_position;return value;
+static void engine_silence(void) {
+    VERA.audio.control = 0x00;
+    VERA.audio.rate = 0;
+    VERA.audio.control = 0xA0;      /* reset the FIFO, stay muted */
 }
 
-__attribute__((noinline)) void music_restart(void) {
-    music_position=0;cache_page=255;music_delay=0;
+/* Feed at most `budget` samples, mixing the active effect when one is playing.
+ * The VERA port 0 address is saved and restored because reading the effect
+ * stage uses the same port. */
+__attribute__((noinline)) static void feed(uint8_t use_music, uint16_t budget) {
+    uint8_t ctrl = VERA.control, hi = VERA.address_hi;
+    uint16_t address = VERA.address;
+    while (budget) {
+        uint16_t chunk, sent, room, ecount = 0;
+        uint8_t *mptr, *eptr = 0;
+        if (use_music) {
+            if (!ring_count && !read_block()) break;
+            if (!ring_count) break;
+            chunk = ring_count > 255u ? 255u : ring_count;
+            if (MUSIC_RING - ring_read < chunk) chunk = MUSIC_RING - ring_read;
+            mptr = &ring[ring_read];
+        } else {
+            chunk = 255u;
+            mptr = (uint8_t *)silence;
+        }
+        if (chunk > budget) chunk = budget;
+        if (sound_remaining()) {
+            eptr = sound_stage(chunk, &ecount);
+            if (eptr) {
+                /* The effect stage is 256 bytes, so its run must not wrap. */
+                room = (uint16_t)(256u - ((uint16_t)(uintptr_t)eptr & 0xFFu));
+                if (ecount > room) ecount = room;
+                if (ecount < chunk) chunk = ecount;
+            }
+            if (!ecount) eptr = 0;
+        }
+        if (!chunk) break;
+        pcm_count = chunk;
+        pcm_pointer = mptr;
+        if (eptr) { pcm_effect = eptr; pcm_mix(); }
+        else pcm_copy();
+        sent = (uint16_t)(chunk - pcm_count);
+        if (use_music) {
+            ring_read += sent;
+            if (ring_read >= MUSIC_RING) ring_read = 0;
+            ring_count -= sent;
+        }
+        if (eptr) sound_stage_commit(sent);
+        budget -= sent;
+        if (sent < chunk) break;    /* FIFO full */
+    }
+    /* Restore control first: the address registers belong to whichever port
+     * control selects, and the effect staging left it on port 0. */
+    VERA.control = ctrl;
+    VERA.address = address;
+    VERA.address_hi = hi;
 }
+
+__attribute__((noinline)) static void engine_start(uint8_t use_music) {
+    VERA.audio.control = 0x20;
+    VERA.audio.rate = 0;
+    VERA.audio.control = 0xA0;      /* discard any stale samples */
+    VERA.audio.control = MUSIC_VOLUME;
+    feed(use_music, MUSIC_BUFFER);
+    VERA.audio.rate = MUSIC_RATE;
+}
+
 void music_init(void) {
-    uint16_t key=0;uint32_t size=0;uint8_t n,pages;
-    music_ready=music_on=music_aux_top=0;music_delay=0;music_fm=0;
-    if(!music_aux_available())return;
-    if(fm_detect()) {
-        if(disk_file("MUSIC.VZM",9,&key,&size)&&size>=3&&size<=63488u)music_fm=1;
-    }
-    if(!music_fm) {
-        if(!disk_file("MUSIC.PSG",9,&key,&size)||size<3||size>63488u)return;
-    }
-    pages=(uint8_t)((size+511u)>>9);
-    music_size=size;
-    music_aux_init();music_destination_page=8;
-    for(n=0;n<pages;n++) {
-        disk_read(n,disk_buffer);if(mli_status)return;
-        music_source=disk_buffer;music_aux_store();
-        music_source=disk_buffer+256;music_aux_store();
-        loading_step();
-    }
-    music_aux_top=music_destination_page;music_ready=1;music_restart();
+    uint16_t key;
+    uint32_t size;
+    music_ready = 0;
+    music_on = 0;
+    music_fd = 0;
+    ring_read = ring_count = 0;
+    music_file_pos = 0;
+    music_mark_ok = 0;
+    budget_phase = 0;
+    /* Validate only: sound_init opens the effect files right after this and
+     * would close ours anyway. */
+    if (!disk_file("MUSIC.PCM", 9, &key, &size)) return;
+    if (size < 512u || size > 0x180000u) { disk_close(); return; }
+    music_size = size;
+    music_ready = 1;
+    disk_close();
 }
 
 __attribute__((noinline)) void music_stop(void) {
-    uint8_t ctrl=VERA.control,hi;uint16_t address;
-    VERA.control=0;address=VERA.address;hi=VERA.address_hi;
-    music_clear();music_on=0;
-    VERA.address=address;VERA.address_hi=hi;VERA.control=ctrl;
+    engine_silence();
+    music_on = 0;
+    disk_close();
+    music_fd = 0;
+    ring_read = ring_count = 0;
+    music_file_pos = 0;
+    music_mark_ok = 0;
+}
+
+__attribute__((noinline)) void music_restart(void) {
+    music_file_pos = 0;
+    music_mark_ok = 0;
+    ring_read = ring_count = 0;
 }
 
 __attribute__((noinline)) void music_tick(void) {
-    uint8_t ctrl,hi,command,count,reg,val;uint16_t address;
-    if(!music_ready||!MUSIC_SETTING) {if(music_on)music_stop();return;}
-    ctrl=VERA.control;VERA.control=0;address=VERA.address;hi=VERA.address_hi;
-    if(!music_on) {
-        music_clear();
-        music_restart();music_on=1;
+    uint8_t music = MUSIC_SETTING != 0;
+    if (!music_ready) return;
+    if (!music && !sound_remaining()) {
+        if (music_on) music_stop();
+        return;
     }
-    while(music_ready) {
-        if(music_fm) {
-            if(music_delay){--music_delay;break;}
-            command=event_byte();
-            if(command==255) {
-                music_clear();
-                music_restart();
-                continue;
-            }
-            if(command<0x80){music_delay=command;break;}
-            if(command<0xC0){psg_write((uint8_t)(command&0x3Fu),event_byte());continue;}
-            if(command<0xE0) {
-                count=(uint8_t)((command&0x1Fu)+1);
-                while(count-- && music_ready){reg=event_byte();val=event_byte();fm_reg(reg,val);}
-                continue;
-            }
-            continue;                       /* $E0-$FE: block padding */
-        }
-        count=event_byte();
-        if(count==255) {
-            music_clear();
-            music_restart();
-            continue;
-        }
-        while(count-- && music_ready) {
-            reg=event_byte();
-            val=event_byte();
-            psg_write(reg, val);
-        }
-        break;
+    if (music) {
+        if (!open_file()) { music_ready = 0; music_stop(); return; }
+        if (!music_on) { engine_start(1); music_on = 1; return; }
+    } else if (!music_on) {
+        engine_start(0);
+        music_on = 1;
+        return;
     }
-    VERA.address=address;VERA.address_hi=hi;VERA.control=ctrl;
+    /* An empty FIFO means a frame overran the buffer; refill it rather than
+     * trickling a frame's worth back and leaving the stream starved. */
+    if (VERA.audio.control & 0x40u) {
+        feed(music, MUSIC_BUFFER);
+        return;
+    }
+    /* 133/134 alternately averages the 133.51 samples one VSYNC drains, so
+     * the queue depth (and effect latency) stays put instead of creeping. */
+    budget_phase ^= 1u;
+    feed(music, (uint16_t)(133u + budget_phase));
 }
