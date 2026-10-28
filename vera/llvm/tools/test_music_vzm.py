@@ -1,4 +1,4 @@
-"""Reference decoder + model run for MUSIC.VZM (YM2151 + PSG percussion).
+"""Reference decoder + model run for MUSIC.VZM (YM2151 only, MIDI-driven arrangement).
 
 Instrumented 65C02 model only: not a listening test and not real hardware.
 
@@ -152,7 +152,7 @@ def check_init_selection(slot):
         assert get(machine, 'music_fm') == want_fm, (slot, fm, vzm_ok)
         assert bytes(machine.mem.ram[sym['vzm_stub_name']:sym['vzm_stub_name'] + 9]) == want_file
         assert get(machine, 'music_ready') == 1
-        want_size = 22974 if want_fm else 8
+        want_size = 28534 if want_fm else 8
         assert get(machine, 'music_size', 4) == want_size
         assert machine.mem.aux[0x800:0x800 + want_size] == pattern(want_size), 'preload must match the stream'
     print(f'PASS slot {slot}: music_init prefers MUSIC.VZM with FM, falls back to MUSIC.PSG', flush=True)
@@ -192,7 +192,11 @@ def main():
     frames = report['ticks']
     expected, loops = decode(data, frames + 1)
     assert len(expected) == frames + 1 and loops == [frames], (loops, frames)
-    assert expected[frames][1][-1][0] == 0xFF, 'loop must re-silence the FM chip'
+    # The player keys off and zeroes $20-$FF on every loop before replaying the
+    # stream, and it keeps consuming in the same tick, so the tick that sees the
+    # $FF starts with that silence block and ends with the frame-0 programming.
+    assert expected[frames][1][:len(fm_silence_writes())] == fm_silence_writes(), \
+        'loop must re-silence the FM chip'
 
     limit = int(sys.argv[1]) if len(sys.argv) > 1 else None
     subset = expected if limit is None else expected[:limit]

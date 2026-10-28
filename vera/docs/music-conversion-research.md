@@ -4,16 +4,17 @@
 
 ## 已接入遊戲：YM2151 FM 版 `MUSIC.VZM`（2026-10-28）
 
-新增第二條音樂路徑：機器上有 A2VERA 的 YM2151 時，遊戲播放 `generated/music.vzm`（打包串流，HDV 上為 `MUSIC.VZM`），旋律走 8 個 FM 聲道、打擊留在 PSG 聲道 12–15；沒有晶片或檔案不存在時才回退到下方純音 PSG。
+新增第二條音樂路徑：機器上有 A2VERA 的 YM2151 時，遊戲播放 `generated/music.vzm`（打包串流，HDV 上為 `MUSIC.VZM`），整首編曲走 8 個 FM 聲道（7 旋律 lead、0–1 bass、2–6 tine），不含 PSG 打擊；沒有晶片或檔案不存在時才回退到下方純音 PSG。
 
-- **轉譜流程**：`tools/build_music_vzm.py` 以 ffmpeg 解 `media/music.ogg`，直接 import `tools/wav2psg.py` 的 `decode`／`analyze`／`percussion`／`route_short_transients`，得到 60 Hz 網格的音高／起音事件，再指派聲部後輸出 ZSM 與 VZM。旋律不是人工校訂樂譜，也不是原作分軌；仍是 FFT 近似轉譜，錯音、漏音與和聲簡化都可能存在。
-- **聲部**：低於 MIDI 52 的音分配給 2 個 bass FM 聲道（CON=4，TL 較高、衰減較長），其他旋律輪流給 6 個 tine 聲道；同一時間最多 8 個 FM 音。PSG 只留打擊（12–15），因此 FM 機器上不會有 16 聲道 PSG 旋律疊在 FM 上。
-- **ZSM 內容**：7582 個 tick（tick rate 60，約 126.4 秒），4306 次 FM 寫入、4630 次 PSG 寫入；未壓縮的 ZSM 為 23709 bytes，VZM 為 22974 bytes（去掉檔頭與 512-byte 記錄補齊、縮短延遲編碼）。全部塞進 800 KB HDV 後仍有空間同時放 `MUSIC.PSG`。
+- **轉譜流程（2026-10-28 重做）**：`tools/build_music_vzm.py` 不再解 OGG 做 FFT，而是直接讀取 repo 內的 `assets/music.mid`（原作 OGG 的 MIDI 轉譜，format 0、3175 音符、122.78 秒、無鼓軌）。音高、音符起訖與力度取自 MIDI 音符清單，量化到 60 Hz tick 後指派聲部。因為來源沒有鼓軌，FM 版刻意不做打擊聲部；先前 FFT/onset 版誤判泛音、自行發明 PSG 打擊，是「聽起來亂七八糟」的主要來源。旋律仍不是人工校訂樂譜，也不是原作分軌，但錯誤只可能來自 MIDI 轉譜本身，不再來自音訊分析。
+- **聲部**：低於 MIDI 52 的音分配到 2 個 bass FM 聲道（CON=4，TL 較高、衰減較長）；其他音符優先給目前最高音的 lead 聲道 7，其餘輪流給 tine 聲道 2–6；同一音符由 key-on 到 key-off 固定佔用同一聲道（不因更換旋律而重觸發），8 聲道滿時偷取最早結束的音。8 個音符同時發聲是上限。
+- **ZSM 內容**：7367 個 tick（tick rate 60，約 122.8 秒），10959 次 FM 寫入、0 次 PSG 寫入、432 次 voice steal；未壓縮的 ZSM 為 32428 bytes，VZM 為 28534 bytes（去掉檔頭與 512-byte 記錄補齊、縮短延遲編碼），112 個 logical page。全部塞進 800 KB HDV 後仍有空間同時放 `MUSIC.PSG`。
+- **音色**：三組 CON=4 patch（bass／tine／lead），frame 0 編程；carrier TL 只依 MIDI 力度在 note-on 寫一次，避免逐 tick 重送。所有 patch 的輸出音量已拉高到與 PSG 後備相近（preview peak 0.867、rms 0.176，無 clipping），不再重現舊版 −26 dBFS 的幾乎無聲。
 - **寄存器去重**：轉換器維護 `fm_last[256]`／`psg_last[64]` 全零基線，只送變更值；`$08`（key mask）永遠送出，因為開關音不需要值相同。播放器在起播與每次 loop 也把 YM `$20–$FF` 清零、PSG 基線設為 `0,0,0,128`，所以去重假設在實機上成立（起播那一個 tick 會送出完整 patch）。
-- **音高換算**：MIDI 音高 → KC 用 `block = midi//12-2`、code 14（C）處理 C，其他用 `block = midi//12-1` 加 `KC_INVERSE = (0,1,2,3,5,6,7,9,10,11,13)`；實測 MIDI 34–96 內誤差約 ±30 cents。TL 每格約 0.75 dB，音量映射以 8 格 ≈ 6 dB 為單位。
-- **成本**：起播與 loop 兩個 tick 各約 45k cycles（1.023 MHz 下約 44 ms），因為要清晶片並送完整 patch；其他 tick 平均約 677 cycles，最大約 7k。這是模型量測，不是實機示波器或音訊擷取。
-- **驗證**：`llvm/tools/test_music_vzm.py` 在 65C02 model 上比對 probe、Intro 文字、`music_init` 的選擇／後備，以及 7583 tick 的 PSG 寄存器影像與 YM2151 寫入順序；兩個 VERA slot 都 byte-exact。這證明串流與播放器一致，**不證明 FM 音色、音量或聽感正確**。
-- **尚未完成**：本環境的 AppleWin 無法在無音訊裝置／無互動桌面下跑完整開機流程，因此還沒有 AppleWin 或實機試聽；FM 音色（多重器回饋、LFO、套用 envelope 的細節）只做了基本 carrier/modulator 設定，未逐聲道人工調音。`MUSIC.VZM` 與 `MUSIC.PSG` 目前也不會互相對齊音量。
+- **音高換算**：MIDI 音高 → KC 用 `block = midi//12-2`、code 14（C）處理 C，其他用 `block = midi//12-1` 加 `KC_INVERSE = (0,1,2,3,5,6,7,9,10,11,13)`；以 melodius 逐半音實測 MIDI 36–84 誤差 <40 cents。TL 每格約 0.75 dB，音量映射以 8 格 ≈ 6 dB 為單位。
+- **成本**：起播與 loop 兩個 tick 各約 44k cycles（1.023 MHz 下約 43 ms），因為要清晶片並送完整 patch；其他 tick 平均約 743 cycles。這是模型量測，不是實機示波器或音訊擷取。
+- **驗證**：`llvm/tools/test_music_vzm.py` 在 65C02 model 上比對 probe、Intro 文字、`music_init` 的選擇／後備，以及 7368 tick 的 PSG 寄存器影像與 YM2151 寫入順序；兩個 VERA slot 都 byte-exact。客觀聆聽比對：FM preview 與原作 OGG 的分段 chroma 相關係數 0.64–0.77（舊 FFT 版 0.47），99.8% 有聲 frame 覆蓋率，無 clipping。這些都只證明音符內容與播放器一致，**不證明 FM 音色或聽感正確**。
+- **尚未完成**：本環境的 AppleWin 沒有可用音訊裝置（`-fm-wav-dump` 擷取全為靜音），因此仍沒有 AppleWin 或實機試聽；FM 音色只做了基本 carrier/modulator 設定，未逐聲道人工調音，也未加入原作鼓聲。`MUSIC.VZM` 與 `MUSIC.PSG` 的音量仍未互相對齊量測。
 
 ## 已採用至遊戲：純音平滑版
 

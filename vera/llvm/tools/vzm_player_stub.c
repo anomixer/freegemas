@@ -23,7 +23,7 @@ uint8_t disk_file(const char *name, uint8_t length, uint16_t *key,
     for (uint8_t i = 0; i < 15; ++i)
         vzm_stub_name[i] = i < length ? (uint8_t)name[i] : 0;
     if (named(name, length, "MUSIC.VZM") && vzm_stub_vzm_ok) {
-        *size = 22974;            /* the shipped MUSIC.VZM length */
+        *size = 28534;            /* the shipped MUSIC.VZM length */
     } else if (named(name, length, "MUSIC.PSG") && vzm_stub_psg_ok) {
         *size = vzm_stub_psg_size ? vzm_stub_psg_size : 1;
     } else {

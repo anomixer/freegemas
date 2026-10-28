@@ -50,11 +50,11 @@ HDV volume name 為 `FREEGEMAS`。若要安裝到其他 ProDOS volume 或子目�
 
 Sound 已改為原作 `select.ogg`、`fall.ogg`、`match1–3.ogg` 解碼的 VERA PCM，不再使用自創 PSG 音色。原作音量 0.3／0.25 保留；沒有額外的 Hint／Reset／Game Over 音效。Options 的 Sound／Music 分別控制音效與遊戲背景音樂。Fullscreen 固定 ON。Time Trial 為兩分鐘倒數；Endless 不顯示時間面板。
 
-遊戲背景音樂有兩條路徑。機器上有 A2VERA FM 女兒板時，開機 Intro 會偵測 YM2151 並顯示 `FM: YM2151 DETECTED (OPM)`，遊戲改載入 `MUSIC.VZM`（packed ZSM 串流，22974 bytes、7582 個 VSYNC tick、約 126.4 秒），以八個 FM 聲道演奏旋律、PSG 打擊聲部。沒有晶片或找不到 `MUSIC.VZM` 時顯示 `FM: NONE, PSG MUSIC ONLY`，改用下方的 `MUSIC.PSG`。`tools/build_music_vzm.py` 在建置時把原作 `media/music.ogg` 轉成此串流（FFT 音高／起音分析、聲部指派、寄存器去重）；Intro 與播放器共用的 71-byte BUSY probe 放在 `llvm/src/fm_probe.h`。整份 VZM 預載到輔助 RAM（90 個 logical page），播放時零磁碟讀取；HDV 同時包含 `MUSIC.PSG` 與 `MUSIC.VZM`。
+遊戲背景音樂有兩條路徑。機器上有 A2VERA FM 女兒板時，開機 Intro 會偵測 YM2151 並顯示 `FM: YM2151 DETECTED (OPM)`，遊戲改載入 `MUSIC.VZM`（packed ZSM 串流，28534 bytes、7367 個 VSYNC tick、約 122.8 秒），以八個 FM 聲道演奏整首編曲：聲道 7 是旋律 lead、聲道 0–1 是 bass、聲道 2–6 是 tine 伴奏。沒有晶片或找不到 `MUSIC.VZM` 時顯示 `FM: NONE, PSG MUSIC ONLY`，改用下方的 `MUSIC.PSG`。`tools/build_music_vzm.py` 改以 `assets/music.mid`（原作 `media/music.ogg` 的 MIDI 轉譜）的音符清單建置串流：音高、音符起訖與力度直接取自 MIDI，不再做 FFT 音高／起音偵測；該 MIDI 沒有鼓軌，因此 FM 串流不含打擊聲部。Intro 與播放器共用的 71-byte BUSY probe 放在 `llvm/src/fm_probe.h`。整份 VZM 預載到輔助 RAM（112 個 logical page），播放時零磁碟讀取；HDV 同時包含 `MUSIC.PSG` 與 `MUSIC.VZM`。
 
 後備的 PSG 路徑採使用者選定的純音平滑版（+9dB 增益，`generated/music_pure_gained.psg`，56675 bytes、7398 frames、約 123.3 秒循環），直接以原始 `MUSIC.PSG` 格式播放，不再使用執行期 FGM2／Huffman 曲線解壓縮（同時釋放主 RAM 空間）。開局前全部預載到 Apple IIe 輔助 RAM（`$0800–$BFFF`，46 KB）與 Auxiliary Language Card Bank 1（連續 `$D000–$FFFF`，12 KB），播放時零磁碟讀取；PSG 與 PCM 音效分開，R 重播、Esc 靜音返回 Title。音樂目前只在遊戲畫面播放，Title／Options 不播放。需要 128KB Apple IIe；沒有輔助 RAM 時安全停用音樂與音效。
 
-`MUSIC.VZM` 在起播與每次 loop 會先送 key-off 並把 YM2151 寄存器歸零，這兩個 tick 各約 45k cycles（1.023 MHz 下約 44 ms）；其餘 tick 平均只有數百 cycles。
+`MUSIC.VZM` 在起播與每次 loop 會先送 key-off 並把 YM2151 寄存器歸零，這兩個 tick 各約 44k cycles（1.023 MHz 下約 43 ms）；其餘 tick 平均約 750 cycles。
 
 match1／2／3 在建置階段直接截斷為前約 0.30 秒（6640 bytes），切掉長尾音；五個 PCM 音效總計降為 26912 bytes，完全塞入 VERA VRAM 的 27904 bytes 預載池，不再佔用輔助 RAM。硬體 PCM FIFO 固定 4KB，起播已填滿，不能由遊戲調大；現有取樣格式約可緩衝 185ms。FIFO 播完後明確靜音、停採樣並清空，不保留最後樣本。select／fall 未變；三份 match 音效不再是完整原作錄音播放。
 
@@ -88,7 +88,7 @@ PCM 現階段為 **原作錄音的移植原型，不是 100% 原作音訊**：16
 
 MIDI 配器研究與新版試作見 [`docs/music-conversion-research.md`](docs/music-conversion-research.md)。`python vera/tools/midi_psg_arrange.py --style clean`／`--style ensemble` 使用使用者提供的 `llvm/build/music_original.mid`；保留來源音高與力度，移除舊 converter 特定曲目用的額外和声／升八度／過長低音拖尾。ensemble 僅按音域推估 Guitar/Bass/Celesta/Marimba 分工，並未恢復原作多樂器分軌。兩版本未接入遊戲，聲道上限／音色／記憶體配置還需要驗證。
 
-`python vera/tools/wav2psg.py`（另需 NumPy）從原作 `media/music.ogg` 離線分析多音高／打擊瞬態，重建 triangle／noise PSG 事件。這是近似轉譜，不是原作錄音的無損轉換；尚未接入遊戲或完成音樂／音效共存的記憶體配置。輸出 `generated/music_trial.psg` 可用 `C:/dev/veramusic/tools/psgplay.exe` 播放；原作 WAV、PSG WAV 預覽及事件流統計放在 `llvm/build/music_*.wav`／`music_psg_report.json`。預覽使用硬體音量、不自動 normalize；noise 為近似渲染，不是 AppleWin 擷取。
+`python vera/tools/wav2psg.py`（另需 NumPy）從原作 `media/music.ogg` 離線分析多音高／打擊瞬態，重建 triangle／noise PSG 事件。這是近似轉譜，不是原作錄音的無損轉換；尚未接入遊戲或完成音樂／音效共存的記憶體配置。輸出 `generated/music_trial.psg` 可用 `C:/dev/veramusic/tools/psgplay.exe` 播放；原作 WAV、PSG WAV 預覽及事件流統計放在 `llvm/build/music_*.wav`／`music_psg_report.json`。預覽使用硬體音量、不自動 normalize；noise 為近似渲染，不是 AppleWin 擷取。FM 版 `MUSIC.VZM` 已改由 `vera/tools/build_music_vzm.py` 直接讀 `vera/assets/music.mid` 產生（見上方音樂路徑說明），不再使用這裡的 FFT 轉譜流程。
 
 ## 回歸測試指令
 
@@ -104,6 +104,6 @@ python -u vera\llvm\tools\test_vera_detect.py
 
 執行實際的 65C02 binaries，使用可追蹤 VRAM 寫入的 VERA／MLI model，涵蓋 slot 2／4、連鎖、局部更新、Hint、時間到／R 與高分讀寫。磁碟是記憶體中的副本，不會寫入測試分數到交付映像。這是補充測試，不能取代 AppleWin 和實機驗證。
 
-`test_music_vzm.py` 不經過 resident loader：它在 model 上直接驅動 Intro 的 FM 偵測、`music_init()` 的檔案選擇（有 FM→`MUSIC.VZM`、無 FM 或檔案不存在→`MUSIC.PSG`）與整份 VZM 解碼，兩個 slot 都逐 tick 比對 PSG 寄存器影像、YM2151 寫入順序、loop 與 stop／OFF 靜音，共 7583 tick byte-exact。它不能證明 FM 晶片的實際聽感。
+`test_music_vzm.py` 不經過 resident loader：它在 model 上直接驅動 Intro 的 FM 偵測、`music_init()` 的檔案選擇（有 FM→`MUSIC.VZM`、無 FM 或檔案不存在→`MUSIC.PSG`）與整份 VZM 解碼，兩個 slot 都逐 tick 比對 PSG 寄存器影像、YM2151 寫入順序、loop 與 stop／OFF 靜音，共 7368 tick byte-exact。它不能證明 FM 晶片的實際聽感。
 
 `test_mos.py` 的 model 現在除了 block 讀寫（`$80`／`$81`）也實作 resident loader 用到的檔案層 MLI（`GET_PREFIX` `$C7`、`OPEN` `$C8`、`READ` `$CA`、`WRITE` `$CB`、`SET_MARK` `$CE`、`GET_EOF` `$D1`、`CLOSE` `$CC`、`QUIT` `$65`），冷開機、Title 與遊戲內路徑都能在 harness 跑完。`test_music.py` 改為播放實際出貨的 raw `MUSIC.PSG` 後備流，逐 frame 比對 7398 frames；`test_sound.py` 改比對四個 VRAM 預載池內的五段 PCM；`test_loading_progress.py` 依磁碟實際檔案計 block。這些仍是 model 測試，不是 AppleWin 或實機驗證。

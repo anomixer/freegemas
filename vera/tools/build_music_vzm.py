@@ -1,38 +1,26 @@
-#!/usr/bin/env python3
-"""Transcribe media/music.ogg into a VERA stream: YM2151 FM voices + VERA PSG percussion.
+"""Arrange the Easy Lemon MIDI for the YM2151 FM daughterboard.
 
-    ogg -> 16 kHz mono analysis WAV -> FFT note/drum analysis
-        -> 60 Hz event list -> ZSM byte stream -> VERA "VZM" re-pack
+`media/music.ogg` is transcribed to `vera/assets/music.mid`; this script reads
+that note list and lays it out on the eight YM2151 channels:
 
-The note/drum analysis is shared with ``wav2psg.py`` (same detectors), the PSG
-part is reduced to the four percussion voices (12-15) and every detected note
-becomes a YM2151 note.  The intermediate ZSM keeps the standard Commander X16
-ZSM layout (16-byte header, PSG/FM/delay commands); the VZM file is that same
-ZSM stream re-packed for the Apple II player:
+  * channel 7  - melody (top note of the sounding set)
+  * channel 0  - bass (lowest note)
+  * channel 1  - second bass voice, only for genuinely low notes
+  * channels 2-6 - accompaniment, highest remaining notes first
 
-  $00-$7F  delay       consume the current 60 Hz tick, wait N more
-  $80-$BF  PSG write   register = byte & $3F, next byte value
-  $C0-$DF  FM batch    count = (byte & $1F) + 1, then count x (reg, value)
-  $FF      end of song loop back to offset 0
-
-Register writes are de-duplicated against a shadow table that starts at zero
-(the player zeroes PSG + YM2151 at start/loop).  ``$08`` (YM2151 key mask) is
-always forwarded verbatim: a zero mask releases, a non-zero mask keys on, and
-two key-ons in a row are a legitimate retrigger.
-
-Unlike ``cx16-othello-vera``'s converter this one does not pad records to 512
-byte blocks: the Apple II player preloads the whole stream, so no record can be
-split by a block read.  Dropping the padding keeps the stream inside the
-63,488-byte Aux RAM budget.
+Driving the FM part from the MIDI note list (instead of the earlier FFT
+transcription of the OGG) keeps every pitch, note boundary and velocity exact,
+so the arrangement no longer contains the over-detected harmonics and octave
+jumps that made the first FM stream sound wrong.  The MIDI has no drum track,
+so there is no invented percussion: the FM chip is the only sound source and
+the PSG-only `MUSIC.PSG` fallback keeps its own separate arrangement.
 
 Outputs:
-  vera/generated/music.vzm                 packed stream (shipped as MUSIC.VZM)
-  vera/generated/music.zsm                 intermediate ZSM (reference/preview)
-  vera/generated/music_vzm.h               size / tick constants for C
-  vera/llvm/build/music_vzm_report.json    conversion statistics
-  vera/llvm/build/music_vzm_preview.wav    optional offline render (melodius)
+  generated/music.vzm        the stream shipped as MUSIC.VZM
+  generated/music.zsm        the same stream with a ZSM header (for melodius)
+  generated/music_vzm.h      size / tick count macros
+  llvm/build/music_vzm_report.json
 """
-from __future__ import annotations
 
 import argparse
 import json
@@ -40,34 +28,30 @@ import subprocess
 import sys
 from pathlib import Path
 
-import numpy as np
-
 HERE = Path(__file__).resolve().parent
 VERA = HERE.parent
-sys.path.insert(0, str(HERE))
-
-from wav2psg import CLOCK, analyze, decode, percussion, route_short_transients  # noqa: E402
 
 TICK_RATE = 60
 MAX_STREAM = 63488          # music_init() hard gate (248 x 256-byte pages)
 FM_CHANNELS = 8
-FM_TL_BASE = 0x00       # total level of a full-velocity carrier (0 = loudest)
-FM_TL_SPAN = 28         # attenuation headroom for quiet notes
-PSG_VOICES = 16
-PERCUSSION_FIRST = 12
+BASS_SPLIT = 52             # below this the second bass voice may take a note
+BASS_CHANNELS = (0, 1)
+ACCOMP_CHANNELS = (2, 3, 4, 5, 6)
+MELODY_CHANNEL = 7
+CARRIER_SLOT = 2            # CON=4: the audible carriers live in slot 2 and 3
 
 # ---------------------------------------------------------------------------
 # YM2151 key code
 # ---------------------------------------------------------------------------
-# KC = octave << 4 | note.  The 4-bit note field is "gappy": the chip subtracts
-# (note >> 2), so 12 semitones map onto 16 codes with values 3/4, 7/8, 11/12
-# shared.  Measured with melodius.exe on the YM2151 core: $4A plays A4 and
-# $3E plays C4, i.e. semitone s uses INVERSE[s-1] inside a block and C sits on
-# note code 14 of the block below.  See llvm/build/fm_kc_table.py.
-KC_INVERSE = (0, 1, 2, 3, 5, 6, 7, 9, 10, 11, 13)  # adjusted semitone -> note code
+# The OPM key code is octave << 4 | note and the note field is "gappy": the
+# chip subtracts (note >> 2), so 12 semitones map onto 16 codes with 3/4,
+# 7/8 and 11/12 shared.  Measured with melodius on the YM2151 core: $3E plays
+# C4 and $4A plays A4 (llvm/build/fm_kc_table.py), i.e. semitone s uses
+# INVERSE[s-1] and C sits on code 14 of the block below.
+KC_INVERSE = (0, 1, 2, 3, 5, 6, 7, 9, 10, 11, 13)
 
 
-def kc_for_midi(midi: int) -> int:
+def kc_for_midi(midi):
     midi = int(midi)
     semitone = midi % 12
     if semitone == 0:
@@ -77,16 +61,22 @@ def kc_for_midi(midi: int) -> int:
         octave = midi // 12 - 1
         note = KC_INVERSE[semitone - 1]
     if not 0 <= octave <= 7:
-        raise ValueError(f"note {midi} is outside the YM2151 KC range")
+        raise ValueError(f'note {midi} is outside the YM2151 KC range')
     return (octave << 4) | note
 
 
 # ---------------------------------------------------------------------------
-# YM2151 patches (CON=4: O1->O2 and O3->O4, two parallel two-operator pairs)
+# YM2151 patches
 # ---------------------------------------------------------------------------
-def _op(mul, tl, ar, dr, sr, sl, rr, dt1=0, ams=0, dt2=0, ks=0):
+# Operator register groups are 0x40 (DT1/MULT), 0x60 (TL), 0x80 (KSR/AR),
+# 0xA0 (AM/DR), 0xC0 (DT2/SR), 0xE0 (SL/RR); the group index is the operator
+# slot, the low three bits of every register are the channel.  Channel
+# register 0x20 holds feedback << 3 | algorithm.  With CON=4 the wiring is
+# slot 0 -> slot 2 and slot 1 -> slot 3, and slots 2/3 are the carriers that
+# reach the output, so the per-note total level goes to slot 2 (TL 0x70+ch).
+def _op(mult, tl, ar, dr, sr, sl, rr, dt1=0, dt2=0, ks=0, ams=0):
     return {
-        'dtmul': (dt1 << 4) | mul,
+        'dtmul': (dt1 << 4) | mult,
         'tl': tl,
         'ksar': (ks << 6) | ar,
         'amsdr': (ams << 7) | dr,
@@ -95,136 +85,289 @@ def _op(mul, tl, ar, dr, sr, sl, rr, dt1=0, ams=0, dt2=0, ks=0):
     }
 
 
-OPERATOR_BASES = (0x40, 0x60, 0x80, 0xA0, 0xC0, 0xE0)
-OPERATOR_KEYS = ('dtmul', 'tl', 'ksar', 'amsdr', 'dt2sr', 'slrr')
-
 PATCHES = {
-    # Operator register slots are M1, M2, C1, C2 (ymfm natural order M1, C1,
-    # M2, C2).  CON=4 wires M1->C1 and M2->C2, so C1/C2 are the audible
-    # carriers and the per-note total level belongs to C1 (slot 2).
-    # Soft round bass: the M2/C2 pair is muted so the tone stays clean.
+    # Rounded bass: one 1:1 FM pair, the second pair muted at the carrier.
     'bass': {
         'alg': 4,
-        'carrier': 2,           # C1 carries the per-note level
         'ops': (
-            _op(mul=1, tl=0x20, ar=31, dr=10, sr=0, sl=4, rr=10),   # M1
-            _op(mul=1, tl=0x7F, ar=31, dr=10, sr=0, sl=15, rr=12),  # M2 (off)
-            _op(mul=1, tl=0x00, ar=31, dr=10, sr=0, sl=4, rr=10),   # C1
-            _op(mul=1, tl=0x7F, ar=31, dr=10, sr=0, sl=15, rr=12),  # C2 (off)
+            _op(mult=1, tl=0x18, ar=31, dr=12, sr=0, sl=7, rr=9),    # M1
+            _op(mult=1, tl=0x7F, ar=31, dr=12, sr=0, sl=7, rr=9),    # M2 (off)
+            _op(mult=1, tl=0x00, ar=31, dr=5, sr=0, sl=4, rr=8),     # C1 carrier
+            _op(mult=1, tl=0x7F, ar=31, dr=12, sr=0, sl=7, rr=9),    # C2 (off)
         ),
     },
-    # Bright struck tone: one 2:1 FM pair plus a quieter 4:1 pair.
+    # Struck tine: 1:1 pair with a fast-decaying modulation index, plus a
+    # quiet 3:1 pair for the attack sparkle.
     'tine': {
         'alg': 4,
-        'carrier': 2,
         'ops': (
-            _op(mul=2, tl=0x1A, ar=31, dr=9, sr=0, sl=5, rr=12),    # M1
-            _op(mul=4, tl=0x2A, ar=31, dr=11, sr=0, sl=7, rr=13),   # M2
-            _op(mul=1, tl=0x00, ar=31, dr=9, sr=0, sl=5, rr=12),    # C1
-            _op(mul=1, tl=0x26, ar=31, dr=10, sr=0, sl=7, rr=13),   # C2
+            _op(mult=1, tl=0x10, ar=31, dr=16, sr=0, sl=9, rr=10),   # M1
+            _op(mult=3, tl=0x20, ar=31, dr=20, sr=0, sl=12, rr=10),  # M2
+            _op(mult=1, tl=0x00, ar=31, dr=12, sr=0, sl=7, rr=12),   # C1 carrier
+            _op(mult=1, tl=0x20, ar=31, dr=14, sr=0, sl=10, rr=12),  # C2 (quiet)
+        ),
+    },
+    # Melody lead: brighter and a little slower to decay than the tine.
+    'lead': {
+        'alg': 4,
+        'ops': (
+            _op(mult=1, tl=0x0A, ar=31, dr=18, sr=0, sl=10, rr=12),  # M1
+            _op(mult=2, tl=0x1C, ar=31, dr=22, sr=0, sl=12, rr=12),  # M2
+            _op(mult=1, tl=0x00, ar=31, dr=13, sr=0, sl=8, rr=12),   # C1 carrier
+            _op(mult=1, tl=0x1C, ar=31, dr=15, sr=0, sl=10, rr=12),  # C2 (quiet)
         ),
     },
 }
 
-ROLE = ('bass', 'bass', 'tine', 'tine', 'tine', 'tine', 'tine', 'tine')
-BASS_SPLIT = 52             # MIDI notes below this prefer the bass channels
+ROLE = ('bass', 'bass', 'tine', 'tine', 'tine', 'tine', 'tine', 'lead')
 
 
 def patch_writes(prefix):
-    """Yield (reg, value) programming one channel's patch (reg without channel)."""
-    writes = [(0x20, 0xC0 | prefix['alg'])]
-    for index, values in enumerate(prefix['ops']):
-        for base, key in zip(OPERATOR_BASES, OPERATOR_KEYS):
-            writes.append((base + index * 8, values[key]))
-    return writes
+    """Yield (register without channel, value) programming one channel."""
+    yield 0x20, 0xC0 | prefix['alg']       # output enable bits | algorithm
+    for slot, op in enumerate(prefix['ops']):
+        yield 0x40 + slot * 8, op['dtmul']
+        yield 0x60 + slot * 8, op['tl']
+        yield 0x80 + slot * 8, op['ksar']
+        yield 0xA0 + slot * 8, op['amsdr']
+        yield 0xC0 + slot * 8, op['dt2sr']
+        yield 0xE0 + slot * 8, op['slrr']
 
 
-def tl_for_level(level, peak, base):
-    """Map a normalised amplitude onto a YM2151 total-level byte."""
-    if level <= 0:
-        return 0x7F
-    amp = min(1.0, (level / peak) ** 0.6)
-    return int(round(base + (1.0 - amp) * FM_TL_SPAN))
+def tl_for_velocity(velocity, role):
+    """Map a MIDI velocity onto a carrier total level (0 = loudest).
+
+    The bass keeps a much smaller attenuation span: the transcription puts a
+    third of its notes an octave or two below the melody, and those low notes
+    have to stay audible against the tine arpeggios.
+    """
+    velocity = max(0, min(127, int(velocity)))
+    base, span = {
+        'bass': (0x00, 0x0A),
+        'tine': (0x02, 0x14),
+        'lead': (0x00, 0x14),
+    }[role]
+    return max(0, min(0x30, base + round((127 - velocity) / 127 * span)))
 
 
 # ---------------------------------------------------------------------------
-# 60 Hz event list
+# Standard MIDI file reader
 # ---------------------------------------------------------------------------
-def build_events(notes, amplitudes, drums):
-    """Return (fm_writes, psg_writes, frames, stats)."""
-    levels, hits = route_short_transients(notes, amplitudes, drums)
-    percussion_regs = percussion(hits)
-    frames = len(levels)
+def _varint(data, pos):
+    value = 0
+    while True:
+        if pos >= len(data):
+            raise ValueError('truncated variable-length value')
+        byte = data[pos]
+        pos += 1
+        value = (value << 7) | (byte & 0x7F)
+        if byte < 0x80:
+            return value, pos
+
+
+def read_smf(path):
+    """Return (notes, duration) with notes as absolute seconds."""
+    data = Path(path).read_bytes()
+    if len(data) < 14 or data[:4] != b'MThd':
+        raise ValueError(f'{path}: not a standard MIDI file')
+    header_len = int.from_bytes(data[4:8], 'big')
+    division = int.from_bytes(data[12:14], 'big')
+    if division & 0x8000:
+        raise ValueError(f'{path}: SMPTE timing is not supported')
+    track_count = int.from_bytes(data[10:12], 'big')
+
+    tempos = []          # (tick, microseconds per quarter note)
+    events = []          # (tick, track, order, status, d1, d2)
+    pos = 8 + header_len
+    for track in range(track_count):
+        if data[pos:pos + 4] != b'MTrk':
+            raise ValueError(f'{path}: track {track} is not an MTrk chunk')
+        size = int.from_bytes(data[pos + 4:pos + 8], 'big')
+        ptr = pos + 8
+        end = ptr + size
+        tick = 0
+        order = 0
+        running = None
+        while ptr < end:
+            delta, ptr = _varint(data, ptr)
+            tick += delta
+            first = data[ptr]
+            if first & 0x80:
+                status = first
+                ptr += 1
+                if status < 0xF0:
+                    running = status
+            elif running is not None:
+                status = running
+            else:
+                raise ValueError(f'{path}: data byte without running status')
+            if status == 0xFF:
+                meta = data[ptr]
+                ptr += 1
+                length, ptr = _varint(data, ptr)
+                payload = data[ptr:ptr + length]
+                ptr += length
+                if meta == 0x51 and len(payload) == 3:
+                    tempos.append((tick, int.from_bytes(payload, 'big')))
+            elif status in (0xF0, 0xF7):
+                length, ptr = _varint(data, ptr)
+                ptr += length
+            elif status >= 0xF0:
+                raise ValueError(f'{path}: unsupported system event {status:02X}')
+            else:
+                kind = status & 0xF0
+                if kind in (0x80, 0x90, 0xA0, 0xB0, 0xE0):
+                    d1 = data[ptr]
+                    d2 = data[ptr + 1]
+                    ptr += 2
+                elif kind in (0xC0, 0xD0):
+                    d1 = data[ptr]
+                    d2 = 0
+                    ptr += 1
+                else:
+                    raise ValueError(f'{path}: unsupported status {status:02X}')
+                events.append((tick, track, order, status, d1, d2))
+                order += 1
+        pos = end
+
+    tempos.sort()
+    if not tempos:
+        tempos = [(0, 500000)]
+
+    def seconds(tick):
+        total = 0.0
+        last = 0
+        tempo = tempos[0][1]
+        for change_tick, change_tempo in tempos:
+            if change_tick >= tick:
+                break
+            total += (change_tick - last) * tempo / 1e6 / division
+            last = change_tick
+            tempo = change_tempo
+        total += (tick - last) * tempo / 1e6 / division
+        return total
+
+    notes = []
+    started = {}
+    for tick, _track, _order, status, d1, d2 in sorted(events):
+        kind = status & 0xF0
+        if kind == 0x90 and d2 > 0:
+            started.setdefault((status & 0x0F, d1), []).append((tick, d2))
+        elif kind == 0x80 or kind == 0x90:
+            queue = started.get((status & 0x0F, d1))
+            if queue:
+                start, velocity = queue.pop(0)
+                notes.append({
+                    'start': seconds(start),
+                    'end': seconds(tick),
+                    'pitch': d1,
+                    'velocity': velocity,
+                })
+    duration = seconds(max((e[0] for e in events), default=0))
+    return notes, duration
+
+
+# ---------------------------------------------------------------------------
+# 60 Hz arrangement
+# ---------------------------------------------------------------------------
+def quantise_notes(notes, frames):
+    out = []
+    for note in notes:
+        start = int(round(note['start'] * TICK_RATE))
+        end = int(round(note['end'] * TICK_RATE))
+        if start < 0 or start >= frames:
+            continue
+        end = min(frames, max(start + 2, end))
+        out.append({
+            'start': start,
+            'end': end,
+            'pitch': note['pitch'],
+            'velocity': note['velocity'],
+        })
+    out.sort(key=lambda note: (note['start'], note['pitch']))
+    return out
+
+
+def _steal_channel(slots, candidates):
+    """Pick the channel whose note ends soonest (ties: started earliest)."""
+    best = candidates[0]
+    for channel in candidates[1:]:
+        note = slots[channel]
+        other = slots[best]
+        if other is None:
+            break
+        if note is None:
+            best = channel
+        elif (note['end'], -note['start']) < (other['end'], -other['start']):
+            best = channel
+    return best
+
+
+def build_events(notes, frames):
+    """Lay the note list out on the FM channels; return (fm, psg, stats).
+
+    A note keeps its channel from key-on to key-off, so a sustained note is never
+    re-articulated when the melody or bass line changes.  A new note takes the
+    first free channel of its register group (bass below BASS_SPLIT, everything
+    else among the tine/lead channels); when the group is full the channel whose
+    note ends soonest is stolen.
+    """
     fm = [[] for _ in range(frames)]
     psg = [[] for _ in range(frames)]
 
-    peak = float(np.percentile(levels[levels > 0], 99)) if np.any(levels) else 1.0
-
-    # Frame 0: program both patches on every FM channel (player starts zeroed).
     for channel in range(FM_CHANNELS):
-        for reg, value in patch_writes(PATCHES[ROLE[channel]]):
+        patch = PATCHES[ROLE[channel]]
+        for reg, value in patch_writes(patch):
             fm[0].append((reg + channel, value))
 
-    slots = [None] * FM_CHANNELS      # note index owned by each channel
-    played = [0] * FM_CHANNELS        # MIDI note currently keyed on (-1 none)
-    release = [0] * FM_CHANNELS
-    note_starts = note_stops = 0
+    starts = [[] for _ in range(frames + 1)]
+    for note in notes:
+        starts[note['start']].append(note)
 
-    previous_psg = [None] * 64
+    slots = [None] * FM_CHANNELS
+    note_starts = note_stops = steals = 0
+
     for frame in range(frames):
-        frame_levels = levels[frame]
-
-        chosen = [int(n) for n in np.flatnonzero(frame_levels > peak * 0.045)]
-        chosen.sort(key=lambda n: frame_levels[n], reverse=True)
-        chosen = chosen[:FM_CHANNELS]
-
-        # Stable ownership: keep a note on its channel while it lasts, release
-        # the channel after three silent frames.
         for channel in range(FM_CHANNELS):
             note = slots[channel]
-            if note is not None and note not in chosen:
-                release[channel] += 1
-                if release[channel] >= 3:
-                    slots[channel] = None
-                    if played[channel] >= 0:
-                        fm[frame].append((0x08, channel))
-                        played[channel] = -1
-                        note_stops += 1
-            elif note is not None:
-                release[channel] = 0
+            if note is not None and note['end'] <= frame:
+                fm[frame].append((0x08, channel))
+                slots[channel] = None
+                note_stops += 1
 
-        for note in chosen:
-            if note in slots:
-                continue
-            role = 'bass' if notes[note] < BASS_SPLIT else 'tine'
-            free = [c for c in range(FM_CHANNELS) if slots[c] is None]
-            preferred = [c for c in free if ROLE[c] == role] or free
-            if not preferred:
-                continue
-            channel = preferred[0]
+        for note in sorted(starts[frame], key=lambda item: -item['velocity']):
+            if note['pitch'] < BASS_SPLIT:
+                candidates = list(BASS_CHANNELS)
+            else:
+                sounding = [slots[channel]['pitch'] for channel in ACCOMP_CHANNELS + (MELODY_CHANNEL,)
+                            if slots[channel] is not None]
+                if not sounding or note['pitch'] >= max(sounding):
+                    candidates = [MELODY_CHANNEL] + list(ACCOMP_CHANNELS)
+                else:
+                    candidates = list(ACCOMP_CHANNELS) + [MELODY_CHANNEL]
+            free = [channel for channel in candidates if slots[channel] is None]
+            if free:
+                channel = free[0]
+            else:
+                channel = _steal_channel(slots, candidates)
+                fm[frame].append((0x08, channel))
+                slots[channel] = None
+                note_stops += 1
+                steals += 1
+            role = ROLE[channel]
+            fm[frame].append((0x28 + channel, kc_for_midi(note['pitch'])))
+            fm[frame].append((0x70 + channel, tl_for_velocity(note['velocity'], role)))
+            fm[frame].append((0x08, 0x78 | channel))
             slots[channel] = note
-            release[channel] = 0
-            midi = int(notes[note])
-            carrier = PATCHES[ROLE[channel]]['carrier']
-            if played[channel] >= 0:
-                fm[frame].append((0x08, channel))       # release before retrigger
-            fm[frame].append((0x28 + channel, kc_for_midi(midi)))
-            fm[frame].append((0x60 + carrier * 8 + channel,
-                              tl_for_level(frame_levels[note], peak, FM_TL_BASE)))
-            fm[frame].append((0x08, 0x78 | channel))    # key on all four operators
-            played[channel] = midi
             note_starts += 1
 
-        # Percussion: only rewrite registers whose value actually changed.
-        voices = percussion_regs[frame].reshape(16)
-        for index in range(16):
-            value = int(voices[index])
-            if previous_psg[PERCUSSION_FIRST * 4 + index] != value:
-                previous_psg[PERCUSSION_FIRST * 4 + index] = value
-                psg[frame].append((PERCUSSION_FIRST * 4 + index, value))
-
-    stats = {'frames': frames, 'noteStarts': note_starts, 'noteStops': note_stops}
-    return fm, psg, frames, stats
+    stats = {
+        'frames': frames,
+        'noteStarts': note_starts,
+        'noteStops': note_stops,
+        'voiceSteals': steals,
+    }
+    return fm, psg, stats
 
 
 # ---------------------------------------------------------------------------
@@ -383,7 +526,7 @@ def check_stream(vzm, frames):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('input', nargs='?', type=Path,
-                        default=VERA.parent / 'media/music.ogg')
+                        default=VERA / 'assets/music.mid')
     parser.add_argument('--vzm', type=Path, default=VERA / 'generated/music.vzm')
     parser.add_argument('--zsm', type=Path, default=VERA / 'generated/music.zsm')
     parser.add_argument('--header', type=Path,
@@ -395,12 +538,14 @@ def main():
                         default=r'C:\dev\veramusic\tools\melodius.exe')
     args = parser.parse_args()
 
-    audio = decode(args.input)
-    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', str(args.input),
-                    '-c:a', 'pcm_s16le',
-                    str(VERA / 'llvm/build/music_original.wav')], check=True)
-    notes, amplitudes, drums = analyze(audio)
-    fm, psg, frames, event_stats = build_events(notes, amplitudes, drums)
+    notes, duration = read_smf(args.input)
+    frames = max(int(round(duration * TICK_RATE)), 2)
+    notes = quantise_notes(notes, frames)
+    if not notes:
+        raise SystemExit(f'{args.input}: no playable notes')
+    frames = max(frames, max(note['end'] for note in notes) + 1)
+
+    fm, psg, event_stats = build_events(notes, frames)
     zsm, last_event = encode_zsm(fm, psg, frames)
     args.zsm.parent.mkdir(parents=True, exist_ok=True)
     args.zsm.write_bytes(zsm)
@@ -409,7 +554,7 @@ def main():
     if len(vzm) > MAX_STREAM:
         raise SystemExit(f'music.vzm is {len(vzm)} bytes, over the {MAX_STREAM} byte budget')
     if ticks != frames:
-        print(f'warning: stream covers {ticks} ticks, analysis has {frames}',
+        print(f'warning: stream covers {ticks} ticks, arrangement has {frames}',
               file=sys.stderr)
 
     args.vzm.parent.mkdir(parents=True, exist_ok=True)
@@ -428,6 +573,7 @@ def main():
         'durationSeconds': round(frames / TICK_RATE, 3),
         'analysisFrames': frames,
         'lastEventFrame': last_event,
+        'notes': len(notes),
         'zsmBytes': len(zsm),
         'vzmBytes': len(vzm),
         'budgetBytes': MAX_STREAM,
@@ -443,12 +589,12 @@ def main():
 
     if not args.no_preview and Path(args.melodius).is_file():
         args.preview.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run([args.melodius, str(args.zsm), '--no-loop',
+        subprocess.run([str(args.melodius), str(args.zsm), '--no-loop',
                         '--wav', str(args.preview)], check=True,
                        stdout=subprocess.DEVNULL)
 
     print(f'music.vzm {len(vzm)} bytes ({ticks} ticks, {fm_writes} FM writes, '
-          f'{psg_writes} PSG writes)')
+          f'{psg_writes} PSG writes, {len(notes)} notes) from {args.input.name}')
 
 
 if __name__ == '__main__':
