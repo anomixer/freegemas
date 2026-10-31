@@ -25,7 +25,13 @@ def clocked(slot):
     """Boot with the PCM FIFO driven by CPU cycles instead of VSYNC frames."""
     m = Machine(slot)
     m.boot_game(1)
+    # frame_pump() may already have started the engine inside start_game;
+    # rewind so the rendered stream starts at the first byte of MUSIC.PCM.
+    call(m, 'music_stop')
     m.mem.pcm_clocked = True
+    m.mem.pcm_writes.clear()
+    m.mem.pcm_fifo.clear()
+    m.mem.pcm_resets = 0
     rendered = bytearray()
     phase = [0]
 

@@ -45,6 +45,9 @@ def started(slot, frames=1200):
     m.mem.inc[:] = [320, 40]
     m.mem.ctrl = 3
     saved = (m.mem.addr[:], m.mem.inc[:], m.mem.ctrl)
+    # frame_pump() may already have started the engine inside start_game, so
+    # rewind explicitly before measuring the stream from its first byte.
+    call(m, 'music_stop')
     m.mem.pcm_writes.clear()
     m.mem.pcm_fifo.clear()
     m.mem.pcm_resets = 0
@@ -132,6 +135,7 @@ for slot in (2, 4):
 # Loop: run past the end of the file and confirm the stream wraps without a gap.
 m = Machine(2)
 m.boot_game(1)
+call(m, 'music_stop')
 m.mem.pcm_writes.clear()
 m.mem.pcm_fifo.clear()
 pos = 0

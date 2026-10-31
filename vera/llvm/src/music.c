@@ -12,12 +12,17 @@
  * fill the FIFO directly.
  *
  * waitvsync returns without waiting when a frame overruns its VSYNC (a match
- * cascade, the music disk read), so the 133/134 samples fed per iteration lag
- * the samples the VERA drains in real time and the queue creeps downward until
- * the player runs dry: a periodic "bo~bo~" pop.  The VERA audio-low flag
- * (ISR bit 3, FIFO below 1024) reports that depth directly, so a small
- * catch-up payment is added whenever the queue is shallower than the target,
- * instead of waiting for the EMPTY flag to find out too late.
+ * cascade, the music disk read, a full-board scan), so the 133/134 samples
+ * fed per iteration lag the samples the VERA drains in real time.  The VERA
+ * audio-low flag (ISR bit 3, FIFO below 1024) reports that depth live, so the
+ * queue is topped back up to the target instead of trickling in one guessed
+ * catch-up amount; the frame length no longer matters.
+ *
+ * The same sample count is the only real-time reference this machine has, so
+ * it doubles as the game clock: music_frames_elapsed() converts the samples
+ * fed back into VSYNC ticks.  Counting loop iterations instead ran the Time
+ * Trial clock at half speed on long frames (the music finished while the
+ * timer still read 1:24).
  */
 #include <stdint.h>
 #include "apple2e.h"
@@ -29,7 +34,10 @@
 #define MUSIC_BUFFER 1024u       /* samples queued (~128 ms at rate 21) */
 #define MUSIC_RATE   21u         /* 21 * 25e6 / 512 / 128 = 8010.86 Hz */
 #define MUSIC_VOLUME 0x0Fu       /* mono 8-bit, volume 15 */
-#define MUSIC_CATCHUP 64u        /* samples repaid while the queue is low */
+#define MUSIC_CATCHUP 128u       /* samples fed per queue top-up step */
+/* One VSYNC drains 8010.86 / 60 = 133.514 samples; thousandths keep the
+ * sample counter integral, so it can double as the game's real-time clock. */
+#define CLOCK_PER_FRAME 133514u
 
 extern uint8_t mli_status;
 extern void disk_read(uint16_t block, uint8_t *dest);
@@ -49,6 +57,8 @@ static uint32_t music_size, music_file_pos, music_mark;
 static uint8_t music_ready, music_on, music_mark_ok;
 static uint8_t music_epoch, music_fd;
 static uint8_t budget_phase;
+static uint32_t clock_acc;       /* samples fed x1000, thousandths of a frame */
+static uint8_t clock_active;     /* the stream fed samples during this frame */
 
 /* ProDOS closes the previous file whenever another one is opened, so the
  * epoch reported by main.c tells us that our refnum is gone. */
@@ -103,9 +113,11 @@ static void engine_silence(void) {
 }
 
 /* Feed at most `budget` samples, mixing the active effect when one is playing.
- * The VERA port 0 address is saved and restored because reading the effect
- * stage uses the same port. */
-__attribute__((noinline)) static void feed(uint8_t use_music, uint16_t budget) {
+ * Returns the samples the FIFO accepted, so the caller can count them.  The
+ * VERA port 0 address is saved and restored because reading the effect stage
+ * uses the same port. */
+__attribute__((noinline)) static uint16_t feed(uint8_t use_music, uint16_t budget) {
+    uint16_t total = 0;
     uint8_t ctrl = VERA.control, hi = VERA.address_hi;
     uint16_t address = VERA.address;
     while (budget) {
@@ -145,6 +157,7 @@ __attribute__((noinline)) static void feed(uint8_t use_music, uint16_t budget) {
         }
         if (eptr) sound_stage_commit(sent);
         budget -= sent;
+        total += sent;
         if (sent < chunk) break;    /* FIFO full */
     }
     /* Restore control first: the address registers belong to whichever port
@@ -152,6 +165,7 @@ __attribute__((noinline)) static void feed(uint8_t use_music, uint16_t budget) {
     VERA.control = ctrl;
     VERA.address = address;
     VERA.address_hi = hi;
+    return total;
 }
 
 __attribute__((noinline)) static void engine_start(uint8_t use_music) {
@@ -173,6 +187,8 @@ void music_init(void) {
     music_file_pos = 0;
     music_mark_ok = 0;
     budget_phase = 0;
+    clock_acc = 0;
+    clock_active = 0;
     /* Validate only: sound_init opens the effect files right after this and
      * would close ours anyway. */
     if (!disk_file("MUSIC.PCM", 9, &key, &size)) return;
@@ -190,6 +206,8 @@ __attribute__((noinline)) void music_stop(void) {
     ring_read = ring_count = 0;
     music_file_pos = 0;
     music_mark_ok = 0;
+    clock_acc = 0;
+    clock_active = 0;
 }
 
 __attribute__((noinline)) void music_restart(void) {
@@ -198,10 +216,21 @@ __attribute__((noinline)) void music_restart(void) {
     ring_read = ring_count = 0;
 }
 
+/* Real time, measured in VSYNC ticks, from the samples the FIFO drained.
+ * Returns 0 when less than a frame has been paid in, so the caller can
+ * accumulate; a frame with no stream at all still counts as one tick. */
+uint8_t music_frames_elapsed(void) {
+    uint8_t n;
+    if (!clock_active) return 1;
+    n = (uint8_t)(clock_acc / CLOCK_PER_FRAME);
+    clock_acc -= (uint32_t)n * CLOCK_PER_FRAME;
+    clock_active = 0;
+    return n;
+}
+
 __attribute__((noinline)) void music_tick(void) {
     uint8_t music = MUSIC_SETTING != 0;
-    uint8_t irq;
-    uint16_t budget;
+    uint16_t total;
     if (!music_ready) return;
     if (!music && !sound_remaining()) {
         if (music_on) music_stop();
@@ -216,22 +245,27 @@ __attribute__((noinline)) void music_tick(void) {
         return;
     }
     /* An empty FIFO means a frame overran the buffer; refill it rather than
-     * trickling a frame's worth back and leaving the stream starved. */
+     * trickling a frame's worth back and leaving the stream starved.  The
+     * samples are queued for later, not played since the last tick, so they
+     * do not count as elapsed time. */
     if (VERA.audio.control & 0x40u) {
         feed(music, MUSIC_BUFFER);
         return;
     }
-    /* 133/134 alternately averages the 133.51 samples one VSYNC drains, so
-     * the queue depth (and effect latency) stays put instead of creeping. */
+    /* 133/134 alternately averages the 133.51 samples one VSYNC drains. */
     budget_phase ^= 1u;
-    budget = (uint16_t)(133u + budget_phase);
-    irq = VERA.irq_flags;
-    if (irq & VERA_IRQ_AUDIO_LOW) {
-        /* A late frame skipped its VSYNC, so one feed is not one VSYNC worth
-         * of audio any more.  Pay the shortfall back rather than letting the
-         * queue slide until the player underruns. */
-        budget += MUSIC_CATCHUP;
+    total = feed(music, (uint16_t)(133u + budget_phase));
+    /* A frame that overran its VSYNC drained more than one frame's worth, so
+     * top the queue back up to the target depth.  The audio-low flag is the
+     * live FIFO level (<1024), so this loop pays exactly the shortfall and
+     * never depends on guessing how long the frame was. */
+    while (VERA.irq_flags & VERA_IRQ_AUDIO_LOW) {
+        uint16_t sent;
         VERA.irq_flags = VERA_IRQ_AUDIO_LOW;    /* clear a latched flag */
+        sent = feed(music, MUSIC_CATCHUP);
+        total += sent;
+        if (sent < MUSIC_CATCHUP) break;        /* FIFO full or stream dry */
     }
-    feed(music, budget);
+    clock_acc += (uint32_t)total * 1000u;
+    clock_active = 1;
 }

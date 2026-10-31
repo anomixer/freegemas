@@ -71,12 +71,29 @@ extern void mli_set_mark(void), mli_get_prefix(void), mli_get_eof(void);
 #define GEM_X(c) ((uint16_t)(93u + (uint16_t)(c) * 26u))
 #define GEM_Y(r) ((uint16_t)(13u + (uint16_t)(r) * 26u))
 
-static void waitvsync(void) {
-    while ((VERA.irq_flags & VERA_IRQ_VSYNC) == 0) {}
-    VERA.irq_flags = VERA_IRQ_VSYNC;
+static void frame_work(void) {
     effects_tick();
     music_tick();
     timer_frame();
+}
+
+/* Long CPU-bound work (a full-board scan, a reshuffle) runs for many VSYNCs
+ * without returning to the main loop, which would leave the PCM queue to
+ * drain dry and the clock short.  Pay one frame's work from wherever the
+ * VSYNC latch is picked up; the timer is left to the main loop so a scan
+ * never re-enters the game-over path. */
+void frame_pump(void) {
+    if (VERA.irq_flags & VERA_IRQ_VSYNC) {
+        VERA.irq_flags = VERA_IRQ_VSYNC;
+        effects_tick();
+        music_tick();
+    }
+}
+
+static void waitvsync(void) {
+    while ((VERA.irq_flags & VERA_IRQ_VSYNC) == 0) {}
+    VERA.irq_flags = VERA_IRQ_VSYNC;
+    frame_work();
 }
 
 static void vram_at(uint32_t address) {
@@ -198,10 +215,17 @@ static void draw_time(void) {
 }
 
 static void timer_frame(void) {
+    /* The PCM stream is the only real-time reference: a frame that overran its
+     * VSYNC still drained (and got repaid) a full frame's samples.  Counting
+     * loop iterations made a 1.5-frame cascade tick 1.5x too slowly. */
+    uint8_t ticks = music_frames_elapsed();
     if (!timer_active || GAME_MODE || game_over) return;
-    if (++time_frames < 60u) return;
-    time_frames = 0;
-    if (time_left) --time_left;
+    time_frames += ticks;
+    if (time_frames < 60u) return;
+    while (time_frames >= 60u) {        /* keep the sub-second remainder */
+        time_frames -= 60u;
+        if (time_left) --time_left;
+    }
     draw_time();
     if (!time_left) {
         game_over = 1;

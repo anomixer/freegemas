@@ -1,4 +1,5 @@
 #include "board.h"
+#include "frame_pump.h"
 
 static uint8_t random_gem(Board *b) {
     b->rng ^= (uint16_t)(b->rng << 7);
@@ -103,15 +104,24 @@ uint8_t board_has_solution(Board *b) {
 
 uint8_t board_find_solution(Board *b, uint8_t *rx, uint8_t *ry, uint8_t *rdx, uint8_t *rdy) {
     uint8_t x, y;
-    for (y = 0; y < 8; ++y) for (x = 0; x < 8; ++x)
-        if (x < 7 && board_swap_creates_match(b,x,y,x+1,y)) { *rx=x; *ry=y; *rdx=1; *rdy=0; return 1; }
-        else if (y < 7 && board_swap_creates_match(b,x,y,x,y+1)) { *rx=x; *ry=y; *rdx=0; *rdy=1; return 1; }
+    /* A dead board scans all 128 swaps, several VSYNCs of CPU work; feed the
+     * PCM queue from inside the scan or the audio drains while the player
+     * waits for the reshuffle. */
+    for (y = 0; y < 8; ++y) {
+        frame_pump();
+        for (x = 0; x < 8; ++x)
+            if (x < 7 && board_swap_creates_match(b,x,y,x+1,y)) { *rx=x; *ry=y; *rdx=1; *rdy=0; return 1; }
+            else if (y < 7 && board_swap_creates_match(b,x,y,x,y+1)) { *rx=x; *ry=y; *rdx=0; *rdy=1; return 1; }
+    }
     return 0;
 }
 
 void board_generate(Board *b) {
     uint8_t x, y;
-    do { for (y=0;y<8;++y) for (x=0;x<8;++x) b->cells[y][x] = random_gem(b); } while (board_has_match(b) || !board_has_solution(b));
+    do {
+        frame_pump();
+        for (y=0;y<8;++y) for (x=0;x<8;++x) b->cells[y][x] = random_gem(b);
+    } while (board_has_match(b) || !board_has_solution(b));
 }
 
 void board_clear_and_refill(Board *b, const uint8_t m[8][8]) {
