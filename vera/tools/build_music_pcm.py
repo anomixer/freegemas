@@ -7,8 +7,10 @@ memory, so the VERA port uses the same idea with a signed 8-bit mono stream
 refills from disk every few frames.
 
 Sample rate: VERA PCM rate 21 gives 25e6/512/128*21 = 8010.86 Hz, so the track
-is resampled to 8011 Hz.  The music is limited to 0.70 full scale and the sound
-effects to 0.29, which leaves room to add both in software without clipping.
+is resampled to 8011 Hz.  The source OGG is already close to full scale, so the
+track is attenuated rather than boosted: the mix peaks near 0.48 full scale and
+the sound effects near 0.29.  That leaves room to add both in software without
+wrapping, and keeps VERA's doubled (PSG + PCM) mixer from clamping on peaks.
 
 Outputs:
   generated/music.pcm        signed 8-bit mono, shipped as MUSIC.PCM
@@ -31,7 +33,8 @@ GENERATED = VERA / 'generated'
 BUILD = VERA / 'llvm' / 'build'
 
 RATE = 8011          # VERA PCM rate 21; the hardware clock is 8010.86 Hz
-MUSIC_LIMIT = 0.70   # full-scale fraction, leaves headroom for sound effects
+MUSIC_GAIN = 0.36    # attenuate: the source OGG already peaks near full scale
+MUSIC_LIMIT = 0.70   # safety ceiling only; MUSIC_GAIN keeps the limiter idle
 FADE = 40            # ~5 ms loop-edge ramp at both ends
 
 
@@ -40,7 +43,7 @@ def decode(ogg):
         'ffmpeg', '-v', 'error', '-i', str(ogg),
         '-af', (f'aresample={RATE}:resampler=swr:filter_size=64:'
                 'phase_shift=10:cutoff=0.97:linear_interp=0,'
-                f'volume=2.0,alimiter=limit={MUSIC_LIMIT}:level=0:'
+                f'volume={MUSIC_GAIN},alimiter=limit={MUSIC_LIMIT}:level=0:'
                 'attack=1:release=20'),
         '-ac', '1', '-f', 's16le', 'pipe:1',
     ]
@@ -95,6 +98,7 @@ def main():
         'bytes': len(pcm),
         'peak': peak,
         'rms': round(rms, 2),
+        'gain': MUSIC_GAIN,
         'limit': MUSIC_LIMIT,
     }
     report_path = BUILD / 'music_pcm_report.json'

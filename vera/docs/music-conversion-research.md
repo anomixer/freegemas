@@ -6,8 +6,8 @@
 
 使用者聽過 FM 版後要求「全部改成 PCM，像 IIgs 那樣」，且不要管機器有沒有 YM2151。現在的實作：
 
-- `vera/tools/build_music_pcm.py` 讀 `vera/assets/music.mid` → ffmpeg 解碼／`aresample=8011`／`volume=2.0,alimiter=limit=0.70`／`-f s8`，輸出 `vera/generated/music.pcm`：signed 8-bit mono、1012224 bytes、1977 個 ProDOS block、約 126.35 秒，峰值 ±90、rms 37.5。40-sample fade 開頭避免起播爆音。
-- `vera/tools/build_sound.mjs` 用同一取樣率 8011 Hz、`volume=0.35,alimiter=limit=0.29`、`-f s8` 產生五個音效（select 1100、fall 1431、match1／2／3 各 2403 bytes，合計 9740 bytes），全部預載到 VRAM `$14800`。音樂上限 90 + 音效上限 37 = 127，所以在 `pcm_mix` 用 signed 相加不會溢位。
+- `vera/tools/build_music_pcm.py` 讀 `media/music.ogg` → ffmpeg 解碼／`aresample=8011`／`volume=0.36`（衰減；來源本身已達 0.94 全刻度）／`alimiter=limit=0.70`（僅保險上限，正常不會觸發）／`-f s8`，輸出 `vera/generated/music.pcm`：signed 8-bit mono、1012224 bytes、1977 個 ProDOS block、約 126.35 秒，峰值 ±61、rms 9.1。40-sample fade 開頭避免起播爆音。
+- `vera/tools/build_sound.mjs` 用同一取樣率 8011 Hz、`volume=0.35,alimiter=limit=0.29`、`-f s8` 產生五個音效（select 1100、fall 1431、match1／2／3 各 2403 bytes，合計 9740 bytes），全部預載到 VRAM `$14800`。音樂上限 61 + 音效上限 37 = 98，所以在 `pcm_mix` 用 signed 相加不會溢位；音樂峰值乘 2（VERA 混音器加倍）後 0.96 也不會 clamp。
 - 播放：`MUSIC_RATE 21` 對應 AppleWin 的 8010.86 Hz；每 VSYNC 從磁碟串流 133／134 bytes 進 1 KB ring，維持 FIFO 約 1024 bytes 深，音效和音樂共用同一條 FIFO。
 - 沒有 Aux RAM、沒有 PSG、沒有 FM 播放路徑；`fm_detect()` 只在 Intro 顯示 `FM: YM2151 DETECTED (OPM)`／`FM: NONE`，與播放無關。
 - 驗證：`test_music.py`（整份 1012224 bytes、磁碟讀取、OFF／ON、混音、R 重播、Esc 靜音）、`test_sound.py`（五個檔案在 `$14800` 起 byte-exact）、`test_pcm_clock.py`（CPU cycle 推進 FIFO，無 PSG 寫入）、`test_loading_progress.py`（186 blocks），兩 slot 全綠。這些是 65C02／VERA model 比對，本環境 AppleWin 的 `-fm-wav-dump` 只產生全零樣本，**沒有** AppleWin 或實機聽感驗證。
