@@ -10,6 +10,14 @@
  * cascade, but small enough that an effect is not audibly late.  A small RAM
  * ring is topped up from MUSIC.PCM every few frames; the disk is never read to
  * fill the FIFO directly.
+ *
+ * waitvsync returns without waiting when a frame overruns its VSYNC (a match
+ * cascade, the music disk read), so the 133/134 samples fed per iteration lag
+ * the samples the VERA drains in real time and the queue creeps downward until
+ * the player runs dry: a periodic "bo~bo~" pop.  The VERA audio-low flag
+ * (ISR bit 3, FIFO below 1024) reports that depth directly, so a small
+ * catch-up payment is added whenever the queue is shallower than the target,
+ * instead of waiting for the EMPTY flag to find out too late.
  */
 #include <stdint.h>
 #include "apple2e.h"
@@ -21,6 +29,7 @@
 #define MUSIC_BUFFER 1024u       /* samples queued (~128 ms at rate 21) */
 #define MUSIC_RATE   21u         /* 21 * 25e6 / 512 / 128 = 8010.86 Hz */
 #define MUSIC_VOLUME 0x0Fu       /* mono 8-bit, volume 15 */
+#define MUSIC_CATCHUP 64u        /* samples repaid while the queue is low */
 
 extern uint8_t mli_status;
 extern void disk_read(uint16_t block, uint8_t *dest);
@@ -191,6 +200,8 @@ __attribute__((noinline)) void music_restart(void) {
 
 __attribute__((noinline)) void music_tick(void) {
     uint8_t music = MUSIC_SETTING != 0;
+    uint8_t irq;
+    uint16_t budget;
     if (!music_ready) return;
     if (!music && !sound_remaining()) {
         if (music_on) music_stop();
@@ -213,5 +224,14 @@ __attribute__((noinline)) void music_tick(void) {
     /* 133/134 alternately averages the 133.51 samples one VSYNC drains, so
      * the queue depth (and effect latency) stays put instead of creeping. */
     budget_phase ^= 1u;
-    feed(music, (uint16_t)(133u + budget_phase));
+    budget = (uint16_t)(133u + budget_phase);
+    irq = VERA.irq_flags;
+    if (irq & VERA_IRQ_AUDIO_LOW) {
+        /* A late frame skipped its VSYNC, so one feed is not one VSYNC worth
+         * of audio any more.  Pay the shortfall back rather than letting the
+         * queue slide until the player underruns. */
+        budget += MUSIC_CATCHUP;
+        VERA.irq_flags = VERA_IRQ_AUDIO_LOW;    /* clear a latched flag */
+    }
+    feed(music, budget);
 }

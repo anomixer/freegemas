@@ -17,7 +17,7 @@
 - `llvm/src/main.c`、`board.c`、`board.h`：遊戲、棋盤、計分、動畫與畫面更新。
 - `llvm/src/effects.c`／`effects.h`：游標、選取框、消除星芒和每組 match 得分浮字。限 4 組同時浮字、32 顆星芒；超量以 ring pool 取代最舊特效，不影響實際計分。
 - `llvm/src/sound.c`／`sound.h`／`pcm_feed.S`：五個原作 PCM 音效（signed 8-bit mono、8010.86 Hz，`build_sound.mjs` 產生，總計 9740 bytes）完整預載到 VERA VRAM `$14800` 之後；播放不讀磁碟、不占 Aux RAM，也不動 PSG。`pcm_copy`／`pcm_mix` 以 `$FF00,Y` 加修補高位元處理跨頁讀取；`pcm_effect` 由 C 端提供，不要在組語重複宣告同名 `.bss` 符號（曾因此讓混音讀到 page 0）。
-- `llvm/src/music.c`／`music.h`：整首 `MUSIC.PCM`（signed 8-bit、8010.86 Hz、1012224 bytes／1977 blocks）在遊戲中從磁碟串流，沒有 FM／PSG／VZM 路徑。`music_tick` 以 1KB ring buffer 維持 FIFO 約 1024 bytes 深度、每 VSYNC 補 133／134 samples；每次 loop 只做一次 SET_MARK，之後連續 MLI READ 最多 1KB，短讀取退回 `disk_read`（512 bytes＋SET_MARK）。`feed()` 在入口保存 VERA 的 control／address／address_hi，並**先還原 control** 再還原位址，否則音效 staging 留在 port 0 會把位址寫錯 port。`sound_play` 只設定 effects（`effect_source`／`effect_remaining`），音樂與音效在 `pcm_mix` 相加（音樂峰值 ±61、音效 ±37，signed 相加不溢位；音樂也維持在半刻度以下，避免 VERA 的 (PSG + PCM) 加倍混音器在峰值 clamp）。`music_init` 先驗證檔案大小，`sound_init` 再載入音效；兩者都會開檔，`disk_epoch()` 讓音樂在 epoch 改變時重新開啟 `MUSIC.PCM`。`fm_detect()` 只用於 Intro 顯示（`FM: YM2151 DETECTED (OPM)`／`FM: NONE`），播放方式與晶片無關。
+- `llvm/src/music.c`／`music.h`：整首 `MUSIC.PCM`（signed 8-bit、8010.86 Hz、1012224 bytes／1977 blocks）在遊戲中從磁碟串流，沒有 FM／PSG／VZM 路徑。`music_tick` 以 1KB ring buffer 維持 FIFO 約 1024 bytes 深度、每 VSYNC 補 133／134 samples；若 ISR bit 3（`VERA_IRQ_AUDIO_LOW`，FIFO < 1024）顯示佇列低於目標深度，再多補 `MUSIC_CATCHUP` 64 samples（frame 超過 VSYNC 時 `waitvsync` 立即返回，只補 133／134 會跟不上硬體連續消耗），並寫 bit 3 清除；每次 loop 只做一次 SET_MARK，之後連續 MLI READ 最多 1KB，短讀取退回 `disk_read`（512 bytes＋SET_MARK）。`feed()` 在入口保存 VERA 的 control／address／address_hi，並**先還原 control** 再還原位址，否則音效 staging 留在 port 0 會把位址寫錯 port。`sound_play` 只設定 effects（`effect_source`／`effect_remaining`），音樂與音效在 `pcm_mix` 相加（音樂峰值 ±61、音效 ±37，signed 相加不溢位；音樂也維持在半刻度以下，避免網頁版 apple2ts 的 `(PSG + PCM)` ×2 混音器在峰值 clamp；AppleWin 是直接相加後 clamp int16，只有超過 127 才削波）。`music_init` 先驗證檔案大小，`sound_init` 再載入音效；兩者都會開檔，`disk_epoch()` 讓音樂在 epoch 改變時重新開啟 `MUSIC.PCM`。`fm_detect()` 只用於 Intro 顯示（`FM: YM2151 DETECTED (OPM)`／`FM: NONE`），播放方式與晶片無關。
 - `llvm/src/hiscore.h`：跨 segment 的兩模式高分與 dirty flag。
 - `tools/build_assets.mjs`：以 `media/` 建立遊戲／標題 palette、RLE 場景和 sprites。
 - `llvm/tools/build_hdv.py`：把程式與 RLE 場景打包至 2048 KB ProDOS HDV，並建立跨 directory block 的檔案目錄。
@@ -107,10 +107,14 @@ AppleWin 重新建置前先卸載或關閉正在使用該 HDV 的模擬器。確
 ## 溝通與變更紀錄
 
 2026-10-31 VERA 音樂 PCM 電平修正（使用者回報太大聲、有「粉粉」的顆粒雜音）：
-1. 原因有兩層。來源 `media/music.ogg` 本身峰值已達 0.94 全刻度，`build_music_pcm.py` 卻又 `volume=2.0`（+6 dB）再 `alimiter=limit=0.70`，等於整首貼著 ceiling 被削平，1.9% 的 sample 壓在頂端；另外 AppleWin 的 VERA 混音是 `(PSG + PCM) * 2` 後 clamp int16，0.70 全刻度的 PCM 乘 2 = 1.4 必然削波。兩層疊加就是聽到的粉狀雜音，而且是在喇叭前才產生，單純轉小聲不會消失。
-2. 修正：`MUSIC_GAIN = 0.36`（改為衰減，不再增益），`MUSIC_LIMIT = 0.70` 保留但只當保險上限、正常不觸發。`music.pcm` 仍是 1012224 bytes／1977 blocks，峰值 ±61（0.48 全刻度、約 -22.9 dBFS）、rms 9.1；乘 2 後 0.96 不 clamp，音樂＋音效最壞相加 98/128 也不 wrap。音效檔與 runtime 混音程式未改。
+1. 原因有兩層。來源 `media/music.ogg` 本身峰值已達 0.94 全刻度，`build_music_pcm.py` 卻又 `volume=2.0`（+6 dB）再 `alimiter=limit=0.70`，等於整首貼著 ceiling 被削平，1.9% 的 sample 壓在頂端；另外網頁版 apple2ts 的 VERA 混音是 `(PSG + PCM) * 2` 後 clamp 到 ±1.0（AppleWin 是直接相加後 clamp int16，**沒有**加倍），0.70 全刻度的 PCM 乘 2 = 1.4 必然削波。來源檔削波加上混音器削波，就是聽到的粉狀雜音，而且是在喇叭前才產生，單純轉小聲不會消失。
+2. 修正：`MUSIC_GAIN = 0.36`（改為衰減，不再增益），`MUSIC_LIMIT = 0.70` 保留但只當保險上限、正常不觸發。`music.pcm` 仍是 1012224 bytes／1977 blocks，峰值 ±61（0.48 全刻度、約 -22.9 dBFS）、rms 9.1；apple2ts 乘 2 後 0.96 不 clamp，音樂＋音效最壞相加 98/128 也不 wrap。音效檔與 runtime 混音程式未改。
 3. 重建：`disk` target 重新產生 `MUSIC.PCM` 並重建 2048 KB HDV，`HISCORE.DAT` 保留（`464748018f02000088040000`）。`test_music.py`、`test_pcm_clock.py`、`test_sound.py`、`test_loading_progress.py` 兩 slot 全綠。
-4. 尚未完成：使用者已在本機試聽，確認**音量**符合預期，但仍聽得到雜音，原因待查（2026-10-31）。這一版沒有 AppleWin 或實機的客觀音訊擷取，電平只有檔案量測。若後續要再調，下一步可再降 `MUSIC_GAIN`，或只調 runtime `MUSIC_VOLUME`（0x0F）；但音量已對，接下來應往混音／串流路徑找雜音來源，而不是繼續調增益。
+4. 後續追查「音量對了但還有雜音」：先排除量化雜訊——用同一條 ffmpeg 鏈重建參考訊號與 `music.pcm` 比對，誤差只有 0.287 LSB rms（峰值 0.50），A／B／C 三個候選檔試聽都聽不到雜音；再排除削波——現行電平在 apple2ts 的 ×2 clamp 下，所有音樂＋音效組合的裁切率都是 0%。剩下的來源是 FIFO 飢餓。
+5. 在 `test_mos.py` 加 cycle 精確的 VSYNC 模型（17073 cycles／frame，FIFO 依 CPU cycle 消耗）後重現：遊戲 frame 經常超過一個 VSYNC（動畫 p95 約 24–30k cycles），`waitvsync` 看到 latch 已設就立即返回，但 `music_tick` 仍只補 133／134 samples，於是每個錯過的 VSYNC 就少補一個 VSYNC 的音訊；實測 240 frames 內 FIFO 歸零 4 次、共 2324 samples（每次 70–80 ms 空白），聽起來就是約每秒一次的「bo~bo~」斷音。
+6. 修正：`music.c` 新增 `MUSIC_CATCHUP 64`；佇列低於目標深度（VERA ISR bit 3／`VERA_IRQ_AUDIO_LOW`，FIFO < 1024，AppleWin 與 apple2ts 都是即時計算）時，每 frame 多補 64 samples，並寫 bit 3 清除。目標深度不變，音效延遲仍約 128 ms；EMPTY 時整批補 1024 的保險也保留。
+7. 驗證：同一個 cycle 精確模型重跑後 0 underrun bursts、FIFO 維持約 1000–1190；`test_music.py`、`test_pcm_clock.py`、`test_sound.py` 兩 slot 全綠；`test_mos.py` 兩 slot 全綠（要改用零高分的測試映像，見下方「可重現的測試」；交付映像的高分仍保留 `464748018f02000088040000`）。這些都是 65C02／VERA model 結果，仍未做 AppleWin 或實機音訊擷取，聽感待使用者確認。
+8. 測試模型修正：`test_mos.py` 原本把任何 ISR 寫入都當成一次 VSYNC（會加 `frames` 並排空 FIFO），新增的 bit 3 清除會被誤算成 frame；現在只有寫 bit 0 才算一次 wait。
 
 2026-10-29 音樂改為整首串流 PCM（`MUSIC.PCM`），移除 FM／VZM／PSG 音樂路徑：
 1. 使用者聽過 FM 版後決定改成「像 IIgs 那樣全部 PCM」，且不管有沒有 YM2151 都用 PCM。`vera/tools/build_music_pcm.py` 以 `vera/assets/music.mid` → ffmpeg `aresample=8011`、`volume=2.0,alimiter=limit=0.70`、`-f s8` 產生 `vera/generated/music.pcm`（1012224 bytes，峰值 ±90、rms 37.5，約 126.35 秒）；`vera/tools/build_sound.mjs` 同樣改為 8-bit mono 8011 Hz、`volume=0.35,alimiter=limit=0.29`，五個音效共 9740 bytes（select 1100、fall 1431、match1 2403、match2 2403、match3 2403）。兩者共用一條 FIFO，為了在軟體相加時不溢位，音樂上限 90、音效上限 37。
@@ -242,6 +246,8 @@ python -u vera\llvm\tools\test_pcm_clock.py
 ```
 
 `test_music.py`／`test_sound.py`／`test_pcm_clock.py`／`test_loading_progress.py` 都是直接對建置出的 65C02 binaries 執行，兩 slot 各跑一遍；VERA 的 PCM FIFO 以 rate 21、每 VSYNC 排空 `round(rate*48828.125/128/60)` 的模型模擬，`test_pcm_clock.py` 另以 `processorCycles`／1.023 MHz 在每條 instruction 後消耗 FIFO。這些是 model 比對，不是 AppleWin 或實機聽感驗證。
+
+`test_mos.py` 會斷言 `disk_scores()` 等於本局打出的分數，所以必須用零高分的測試映像：把交付映像複製到 `llvm/build/test-zero.hdv`，再將其中的 `HISCORE.DAT` 12 bytes 設為 `FGH\x01` 加 8 個 0，然後 `$env:FREEGEMAS_TEST_DISK='...\llvm\build\test-zero.hdv'; python -u vera\llvm\tools\test_mos.py`。直接對保留真實高分的交付映像跑，會在「separate records」那關失敗；合成高分不得寫回交付映像。
 
 model 已補上檔案層 MLI（2026-10-28）：`test_mos.py` 的 `Machine.mli()` 除了 block 讀寫（`$80`／`$81`）也實作 `GET_PREFIX $C7`、`OPEN $C8`、`READ $CA`、`WRITE $CB`、`SET_MARK $CE`、`GET_EOF $D1`、`CLOSE $CC`、`QUIT $65`，檔案內容直接取自 HDV catalog（storage 1／2／3 都跟隨 index block），WRITE 會回寫 `HISCORE.DAT` 的 data block。READ 越過 EOF 時回 status `$42` 但 carry 保持 clear（trampoline 的 `BCS fail` 因此可載入非 512 整數倍的 binary），其他錯誤 status 才設 carry。冷開機、Title、遊戲內、Options、滑鼠與音樂路徑的 harness 回歸因此重新全綠；測試同時更新為現行資產（`MUSIC.PCM` 串流、VRAM-only 8-bit 音效）。
 

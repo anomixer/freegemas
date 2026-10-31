@@ -88,7 +88,10 @@ class Memory:
             if r in (3,4):
                 port=r-3;v=self.vram[self.addr[port]&0x1FFFF];self.addr[port]=(self.addr[port]+self.inc[port])&0x1FFFF;return v
             if r==5:return self.ctrl
-            if r==7:return 1 # deterministic VSYNC pulse per wait, not wall-clock
+            if r==7:
+                # VSYNC pulse per wait, not wall-clock, plus bit 3: the audio-low
+                # flag both emulators compute from the live FIFO depth (<1024).
+                return 1 | (8 if len(self.pcm_fifo) < 1024 else 0)
             if r==27:return (self.reg[r]&63)|(128 if len(self.pcm_fifo)>=4095 else 0)|(64 if not self.pcm_fifo else 0)
             return self.reg[r]
         if self.fm_base<=a<self.fm_base+2:
@@ -123,6 +126,9 @@ class Memory:
                     self.pcm_fifo.append(v);self.pcm_writes.append(v)
                 self.reg[r]=v
                 if r==7:
+                    # Clearing VSYNC (bit 0) marks a waited frame; clearing the
+                    # audio-low flag (bit 3) is not a frame and must not drain.
+                    if not v&1:return
                     self.frames+=1
                     if self.reg[28] and not self.pcm_clocked:
                         samples=round(self.reg[28]*48828.125/128/60)

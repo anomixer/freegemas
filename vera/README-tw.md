@@ -50,9 +50,9 @@ HDV volume name 為 `FREEGEMAS`。若要安裝到其他 ProDOS volume 或子目�
 
 Sound 使用原作 `select.ogg`、`fall.ogg`、`match1–3.ogg`，以 signed 8-bit mono VERA PCM、rate 21（8010.86 Hz）與原作增益轉換，五份合計 9740 bytes，全部預載到 VERA VRAM `$14800` 之後，播放零磁碟讀取、不佔輔助 RAM。
 
-VERA 只有一個 PCM FIFO，音樂與音效共用，因此遊戲以軟體混音：建置時把音樂峰值正規化到約 ±61、音效限在 ±37，signed 8-bit 相加不會溢位。音樂維持在半滿刻度以下，也避免 VERA 的 (PSG + PCM) 加倍混音器在峰值時 clamp——先前把音樂推到 0.70 全刻度時，那種顆粒雜音就是這裡削出來的。音效 staging 透過 port 0 讀 VRAM，並還原兩個位址 port 與 control，混音不會破壞繪圖狀態。新音效會取代舊音效，但永遠疊在音樂之上。
+VERA 只有一個 PCM FIFO，音樂與音效共用，因此遊戲以軟體混音：建置時把音樂峰值正規化到約 ±61、音效限在 ±37，signed 8-bit 相加不會溢位。音樂維持在半滿刻度以下，也讓網頁版（apple2ts）的 `(PSG + PCM)` ×2 混音器不會在峰值 clamp——先前把音樂推到 0.70 全刻度時，那種顆粒雜音就是這裡削出來的；AppleWin 是直接相加、超過 127 才削波，不會加倍。音效 staging 透過 port 0 讀 VRAM，並還原兩個位址 port 與 control，混音不會破壞繪圖狀態。新音效會取代舊音效，但永遠疊在音樂之上。
 
-音樂在每一台 VERA 機器上都改成整首串流 PCM（IIgs 方式）：`MUSIC.PCM` 為 1012224 bytes（1977 個 ProDOS block、126.35 秒）。`tools/build_music_pcm.py` 以 ffmpeg 產生（linear-interp 重採樣到 8011 Hz、衰減到約 0.48 全刻度、40-sample fade）；原始音軌本身已接近全刻度，再加 6 dB 只會讓 limiter 削波。0.70 limiter 現在只是保險上限，不會被觸發。遊戲以 1KB ring buffer 從磁碟串流，FIFO 維持約 1024 bytes，每 VSYNC 補 133／134 samples。每次 loop 只做一次 SET_MARK，之後連續 MLI READ 最多 1KB；短讀取退回 512-byte 讀取。整首循環播放。
+音樂在每一台 VERA 機器上都改成整首串流 PCM（IIgs 方式）：`MUSIC.PCM` 為 1012224 bytes（1977 個 ProDOS block、126.35 秒）。`tools/build_music_pcm.py` 以 ffmpeg 產生（linear-interp 重採樣到 8011 Hz、衰減到約 0.48 全刻度、40-sample fade）；原始音軌本身已接近全刻度，再加 6 dB 只會讓 limiter 削波。0.70 limiter 現在只是保險上限，不會被觸發。遊戲以 1KB ring buffer 從磁碟串流，FIFO 維持約 1024 bytes，每 VSYNC 補 133／134 samples；當 frame 超過 VSYNC、`waitvsync` 沒等到就返回時，只要 audio-low（ISR bit 3，FIFO < 1024）顯示佇列已低於目標深度，就多補 64 samples，把漏掉的時間補回來，避免 FIFO 一路滑到見底而出現「bo~bo~」斷音。每次 loop 只做一次 SET_MARK，之後連續 MLI READ 最多 1KB；短讀取退回 512-byte 讀取。整首循環播放。
 
 YM2151 probe 現在只供顯示：Intro 會印 `FM: YM2151 DETECTED (OPM)` 或 `FM: NONE`，但播放方式完全相同。已沒有 FM／PSG 音樂路徑，磁碟上也沒有 `MUSIC.VZM`、`MUSIC.PSG`，不再預載到輔助 RAM；HDV 容量 2048 KB。
 
