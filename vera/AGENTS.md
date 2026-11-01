@@ -1,5 +1,11 @@
 # 開發指南：Apple //e VERA 版 Freegemas
 
+## 目前音樂模式（更新）
+
+- Options 的 Music 依序切換 PCM（`$03F2=1`）、PSG（`2`）、Off（`0`）。PSG 模式在開局將原有 `generated/music_pure_gained.psg`／`MUSIC.PSG` 預載至 Aux RAM／Aux LC，播放音樂和預載 PCM 音效不讀碟；進場、重載場景、切換畫面與高分保存仍需磁碟。舊文中「不再支援 PSG」僅為歷史記錄。
+- `llvm/src/psg_music.c`／`music_aux.S` 負責 PSG 載入及逐 frame 播放；PCM FIFO 仍負責音效。兩個 slot 的 PSG 全曲寄存器影像與播放期間無讀碟由 `test_psg_music.py` 驗證；AppleWin 與真機仍需確認。
+- 使用者已在 Apple2TS 確認 PCM／PSG 音訊與寶石下落正常，並指定此版定案；交付的 `vera/freegemas.hdv` 兩種模式高分均重設為 0。此版尚未重新驗證 AppleWin 或實機。
+
 ## 主線與原則
 
 - 目前可執行版本是 `vera/llvm/` 下的 LLVM-MOS／C 移植，開機系統是 ProDOS `FREEGEM.SYSTEM`。主要遊戲 binary 載入 `$3000`。
@@ -88,7 +94,7 @@ AppleWin 重新建置前先卸載或關閉正在使用該 HDV 的模擬器。確
 - 初版 seed 修正只在 Title idle loop 累積，動畫途中先按 Space 會排隊，導致第一次開局仍可得到固定 seed=1。現在 `random_poll()` 在 Intro 與 Title 動畫等待期間也偵測按鍵上升緣，把輪詢時機混入 seed；不能只累積固定動畫 frame 數。兩 slot 回歸加入動畫第 2／10／30 frame 提早開始；AppleWin slot 4 兩次獨立啟動擷取的 seed 為 `$001A`／`$CD40`，64 格棋盤資料不同。
 - `H` 使用提示後，該回合初始 match 不計分，依原作規則處理後續 cascade。
 - Hint 依 `src/GameHint.cpp` 使用獨立綠色框（sprite 64）標出第一個解的寶石，40 ticks 內分段放大後消失；不改變 cursor／已選取寶石。綠色從既有 palette 選取，不改色盤。合法交換、R、Game Over 清除提示框；游標移動不移動提示框。CPU regression 驗證三段圖樣的完整四邊、實際 sprite 配置在各掃描線的預算、位置、保留選取狀態、逾時與棋盤零重畫。
-- Options 的 Sound 控制原作 PCM 音效，page3 `$03F3` 為 ON／OFF；Music `$03F2` 控制整首串流 PCM 音樂（`MUSIC.PCM`，rate 21／8010.86 Hz），Fullscreen 固定 ON。Sound／Music 互不連動，Esc 回 Title 前同時靜音、關檔；R 從頭重播音樂。兩者共用一條 PCM FIFO，軟體混音；PSG 已不再使用。
+- Options 的 Sound 控制原作 PCM 音效，page3 `$03F3` 為 ON／OFF；Music `$03F2` 控制整首串流 PCM 音樂（`MUSIC.PCM`，rate 21／8010.86 Hz），Fullscreen 固定 ON。Sound／Music 互不連動，Esc 回 Title 前同時靜音、關檔；R 從頭重播音樂。PCM 音樂與音效共用 FIFO，PSG 音樂由獨立聲道播放。
 
 ## 除錯注意事項
 

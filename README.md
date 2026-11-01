@@ -104,7 +104,7 @@ An Apple //e VERA port is maintained in [`vera/`](vera/). Read [`vera/README.md`
 
 - **Platform & Engine**: Compiled to 65C02 native code using the [LLVM-MOS SDK](https://github.com/llvm-mos/llvm-mos-sdk). Uses a 2 MB ProDOS HDV disk image ([`vera/freegemas.hdv`](vera/freegemas.hdv)).
 - **Graphics**: 320×240 8bpp bitmap mode with persistent VERA hardware gem sprites and top-edge masking.
-- **Audio & Features**: The whole music track is streamed from disk as 8-bit PCM (`MUSIC.PCM`, 8011 Hz) on the single VERA PCM FIFO, while the five original PCM sound effects are preloaded into VERA VRAM and mixed in software on top; no PSG or FM playback path. Segmented loader for title, game, instructions, and options; full keyboard and mouse control support.
+- **Audio & Features**: Choose streamed 8-bit PCM music or the original preloaded PSG arrangement; five PCM sound effects are preloaded into VERA VRAM. PSG music and effects need no disk reads during playback. Segmented loader for title, game, instructions, and options; full keyboard and mouse control support.
 - **Requirements**: 128 KB Apple //e with a VERA card in Slot 2 or Slot 4, tested in VERA-enabled AppleWin and on real hardware (VeraSD).
 
 ---

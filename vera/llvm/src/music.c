@@ -2,9 +2,8 @@
  *
  * VERA has a single PCM FIFO and the sound effects share it, so the game
  * feeds one 8-bit stream: music bytes read from disk plus the active effect,
- * added sample by sample.  The two sources are limited to 0.70 and 0.29 of
- * full scale at build time, so the sum always fits signed 8-bit without a
- * clamp.
+ * added sample by sample. The source peaks fit signed 8-bit without wrapping;
+ * PCM volume also leaves headroom for the doubled VERA bus in the emulators.
  *
  * The FIFO is kept about two VSYNC frames deep: enough slack for a slow match
  * cascade, but small enough that an effect is not audibly late.  A small RAM
@@ -33,7 +32,7 @@
 #define MUSIC_RING   1024u       /* staging ring, one block plus slack */
 #define MUSIC_BUFFER 1024u       /* samples queued (~128 ms at rate 21) */
 #define MUSIC_RATE   21u         /* 21 * 25e6 / 512 / 128 = 8010.86 Hz */
-#define MUSIC_VOLUME 0x0Fu       /* mono 8-bit, volume 15 */
+#define MUSIC_VOLUME 0x0Du       /* mono 8-bit, volume 13 (38/64) */
 #define MUSIC_CATCHUP 128u       /* samples fed per queue top-up step */
 /* One VSYNC drains 8010.86 / 60 = 133.514 samples; thousandths keep the
  * sample counter integral, so it can double as the game's real-time clock. */
@@ -49,12 +48,14 @@ extern void pcm_copy(void), pcm_mix(void);
 extern uint16_t pcm_count;
 extern uint8_t *pcm_pointer;
 extern uint8_t *pcm_effect;
+extern void psg_init(void), psg_tick(void), psg_stop(void), psg_restart(void);
 
 static uint8_t ring[MUSIC_RING];
 static const uint8_t silence[256];
 static uint16_t ring_read, ring_count;
 static uint32_t music_size, music_file_pos, music_mark;
 static uint8_t music_ready, music_on, music_mark_ok;
+static uint8_t pcm_playing_music;
 static uint8_t music_epoch, music_fd;
 static uint8_t budget_phase;
 static uint32_t clock_acc;       /* samples fed x1000, thousandths of a frame */
@@ -175,6 +176,7 @@ __attribute__((noinline)) static void engine_start(uint8_t use_music) {
     VERA.audio.control = MUSIC_VOLUME;
     feed(use_music, MUSIC_BUFFER);
     VERA.audio.rate = MUSIC_RATE;
+    pcm_playing_music = use_music;
 }
 
 void music_init(void) {
@@ -182,6 +184,7 @@ void music_init(void) {
     uint32_t size;
     music_ready = 0;
     music_on = 0;
+    pcm_playing_music = 0;
     music_fd = 0;
     ring_read = ring_count = 0;
     music_file_pos = 0;
@@ -189,6 +192,12 @@ void music_init(void) {
     budget_phase = 0;
     clock_acc = 0;
     clock_active = 0;
+    if (MUSIC_SETTING == 2u) {
+        /* PSG and preloaded effects do not depend on MUSIC.PCM. */
+        music_ready = 1;
+        psg_init();
+        return;
+    }
     /* Validate only: sound_init opens the effect files right after this and
      * would close ours anyway. */
     if (!disk_file("MUSIC.PCM", 9, &key, &size)) return;
@@ -198,9 +207,10 @@ void music_init(void) {
     disk_close();
 }
 
-__attribute__((noinline)) void music_stop(void) {
+static void pcm_stop(void) {
     engine_silence();
     music_on = 0;
+    pcm_playing_music = 0;
     disk_close();
     music_fd = 0;
     ring_read = ring_count = 0;
@@ -210,30 +220,45 @@ __attribute__((noinline)) void music_stop(void) {
     clock_active = 0;
 }
 
+__attribute__((noinline)) void music_stop(void) {
+    pcm_stop();
+    psg_stop();
+}
+
 __attribute__((noinline)) void music_restart(void) {
     music_file_pos = 0;
     music_mark_ok = 0;
     ring_read = ring_count = 0;
+    psg_restart();
 }
 
 /* Real time, measured in VSYNC ticks, from the samples the FIFO drained.
  * Returns 0 when less than a frame has been paid in, so the caller can
  * accumulate; a frame with no stream at all still counts as one tick. */
-uint8_t music_frames_elapsed(void) {
+__attribute__((noinline)) uint8_t music_frames_elapsed(void) {
     uint8_t n;
     if (!clock_active) return 1;
-    n = (uint8_t)(clock_acc / CLOCK_PER_FRAME);
-    clock_acc -= (uint32_t)n * CLOCK_PER_FRAME;
+    /* Usually one or two frames are due. Repeated subtraction avoids a
+     * costly 32-bit divide and multiply in every 65C02 animation frame. */
+    n = 0;
+    while (clock_acc >= CLOCK_PER_FRAME && n != 255u) {
+        clock_acc -= CLOCK_PER_FRAME;
+        ++n;
+    }
     clock_active = 0;
     return n;
 }
 
 __attribute__((noinline)) void music_tick(void) {
-    uint8_t music = MUSIC_SETTING != 0;
+    uint8_t music = MUSIC_SETTING == 1u;
     uint16_t total;
+    if (MUSIC_SETTING == 2u) psg_tick();
     if (!music_ready) return;
+    if (music_on && pcm_playing_music != music) pcm_stop();
     if (!music && !sound_remaining()) {
-        if (music_on) music_stop();
+        /* Effects are already queued in the FIFO; let the tail play before
+         * resetting it when PSG or OFF mode has no PCM music. */
+        if (music_on && (VERA.audio.control & 0x40u)) pcm_stop();
         return;
     }
     if (music) {

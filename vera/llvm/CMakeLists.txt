@@ -72,12 +72,12 @@ add_custom_command(OUTPUT "${TITLE_GEMS_GEN}"
   DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/bin2c.mjs" "${CMAKE_CURRENT_SOURCE_DIR}/../generated/title_gems_32.idx" VERBATIM)
 add_custom_command(OUTPUT "${OUT}"
   COMMAND "${MOS_CLANG}" -Oz -mcpu=mos65c02 -T "${SRC}/link3000.ld" -mlto-zp=157 -DVERA_BASE=0xC200
-          -I "${CMAKE_CURRENT_BINARY_DIR}" -o "${OUT}" "${SRC}/main.c" "${SRC}/board.c" "${SRC}/effects.c" "${SRC}/sound.c" "${SRC}/pcm_feed.S" "${SRC}/music.c" "${SRC}/mouse.S" "${SRC}/mli.s"
+          -I "${CMAKE_CURRENT_BINARY_DIR}" -o "${OUT}" "${SRC}/main.c" "${SRC}/board.c" "${SRC}/effects.c" "${SRC}/sound.c" "${SRC}/pcm_feed.S" "${SRC}/music.c" "${SRC}/psg_music.c" "${SRC}/music_aux.S" "${SRC}/mouse.S" "${SRC}/mli.s"
   DEPENDS "${GEN}" "${PALETTE_GEN}" "${SELECTOR_GEN}" "${GEMS_GEN}" "${SPRITES_GEN}" "${SRC}/main.c" "${SRC}/mouse.S" "${SRC}/mouse.h" "${SRC}/board.c" "${SRC}/mli.s" "${SRC}/board.h" "${SRC}/frame_pump.h" "${SRC}/apple2e.h" "${SRC}/link3000.ld"
   VERBATIM)
 add_custom_command(OUTPUT "${OUT4}"
   COMMAND "${MOS_CLANG}" -Oz -mcpu=mos65c02 -T "${SRC}/link3000.ld" -mlto-zp=157 -DVERA_BASE=0xC400
-          -I "${CMAKE_CURRENT_BINARY_DIR}" -o "${OUT4}" "${SRC}/main.c" "${SRC}/board.c" "${SRC}/effects.c" "${SRC}/sound.c" "${SRC}/pcm_feed.S" "${SRC}/music.c" "${SRC}/mouse.S" "${SRC}/mli.s"
+          -I "${CMAKE_CURRENT_BINARY_DIR}" -o "${OUT4}" "${SRC}/main.c" "${SRC}/board.c" "${SRC}/effects.c" "${SRC}/sound.c" "${SRC}/pcm_feed.S" "${SRC}/music.c" "${SRC}/psg_music.c" "${SRC}/music_aux.S" "${SRC}/mouse.S" "${SRC}/mli.s"
   DEPENDS "${GEN}" "${PALETTE_GEN}" "${SELECTOR_GEN}" "${GEMS_GEN}" "${SPRITES_GEN}" "${SRC}/main.c" "${SRC}/mouse.S" "${SRC}/mouse.h" "${SRC}/board.c" "${SRC}/mli.s" "${SRC}/board.h" "${SRC}/frame_pump.h" "${SRC}/apple2e.h" "${SRC}/link3000.ld"
   VERBATIM)
 add_custom_command(OUTPUT "${TITLE}"
@@ -98,7 +98,7 @@ add_custom_command(OUTPUT "${OPTION4}" COMMAND "${MOS_CLANG}" -Oz -mcpu=mos65c02
 foreach(IMAGE IN ITEMS "${OUT}" "${OUT4}")
   add_custom_command(OUTPUT "${IMAGE}" APPEND DEPENDS "${MOUSE_GEN}")
   add_custom_command(OUTPUT "${IMAGE}" APPEND DEPENDS "${LOADING_HEADER}" "${SRC}/loading.h")
-  add_custom_command(OUTPUT "${IMAGE}" APPEND DEPENDS "${SRC}/effects.c" "${SRC}/effects.h" "${EFFECTS_DIGITS_GEN}" "${SRC}/sound.c" "${SRC}/sound.h" "${SRC}/pcm_feed.S" "${SRC}/music.c" "${SRC}/music.h")
+  add_custom_command(OUTPUT "${IMAGE}" APPEND DEPENDS "${SRC}/effects.c" "${SRC}/effects.h" "${EFFECTS_DIGITS_GEN}" "${SRC}/sound.c" "${SRC}/sound.h" "${SRC}/pcm_feed.S" "${SRC}/music.c" "${SRC}/music.h" "${SRC}/psg_music.c" "${SRC}/music_aux.S")
 endforeach()
 foreach(IMAGE IN ITEMS "${TITLE}" "${TITLE4}" "${HOWTO}" "${HOWTO4}" "${OPTION}" "${OPTION4}")
   add_custom_command(OUTPUT "${IMAGE}" APPEND DEPENDS ${MENU_MOUSE} "${SRC}/menu_mouse.h" "${SRC}/mouse.h" "${MOUSE_GEN}")

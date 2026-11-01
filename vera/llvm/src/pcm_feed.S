@@ -14,6 +14,25 @@
         .section .text
         .global pcm_copy
         .global pcm_mix
+        .global pcm_stage
+/* Copy 1..256 bytes from VERA data port 0 to pcm_pointer. A zero low
+ * count represents 256; the C caller never invokes this with a zero count. */
+pcm_stage:
+        LDA pcm_pointer+1
+        STA stage_store+2
+        LDY pcm_pointer
+        LDX pcm_count
+stage_next:
+        LDA VERA_BASE+3
+stage_store:
+        STA $FF00,Y
+        INY
+        BNE stage_no_wrap
+        INC stage_store+2
+stage_no_wrap:
+        DEX
+        BNE stage_next
+        RTS
 pcm_copy:
         LDA pcm_pointer+1
         STA pcm_load+2

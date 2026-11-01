@@ -8,6 +8,20 @@ from test_mos import Machine, VERA
 
 MUSIC = (VERA / 'generated/music.pcm').read_bytes()
 
+def signed_samples(data):
+    return [x if x < 128 else x - 256 for x in data]
+
+# Cover every possible alignment of music and each effect. Both emulator
+# mixers double the PCM bus after applying VERA's volume lookup (13 = 38/64).
+music_samples = signed_samples(MUSIC)
+for name in ('select', 'fall', 'match1', 'match2', 'match3'):
+    effect = signed_samples((VERA / f'generated/{name}.pcm').read_bytes())
+    lo = min(music_samples) + min(effect)
+    hi = max(music_samples) + max(effect)
+    assert -128 <= lo <= hi <= 127, f'{name}: signed mixer overflow'
+    assert lo * 256 * 38 * 2 >= -32768 * 64, f'{name}: output clips low'
+    assert hi * 256 * 38 * 2 <= 32767 * 64, f'{name}: output clips high'
+
 
 def call(m, name, arg=0):
     pc, sp = m.cpu.pc, m.cpu.sp
@@ -83,7 +97,7 @@ for slot in (2, 4):
     pos = 0
     assert tick(m) == 1024
     assert bytes(m.mem.pcm_writes) == MUSIC[:1024], 'ON must replay from the start'
-    assert m.mem.reg[28] == 21 and m.mem.reg[27] & 15 == 15
+    assert m.mem.reg[28] == 21 and m.mem.reg[27] & 15 == 13
     pos = 1024
 
     # Sound OFF must not stop the music.

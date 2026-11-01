@@ -72,6 +72,17 @@ for slot in (2, 4):
     # Pure music: byte-for-byte, including a 230 ms CPU gap that starves the
     # FIFO (the player must refill in order, not skip or duplicate samples).
     m, rendered, advance = clocked(slot)
+    # Verify the real compiled clock conversion across zero, fractional,
+    # multiple and capped frame counts, including the carried remainder.
+    for acc in (0, 133513, 133514, 2 * 133514 + 123, 256 * 133514):
+        m.put('clock_acc', acc, 4)
+        m.put('clock_active', 1)
+        call(m, 'music_frames_elapsed')
+        expected = min(acc // 133514, 255)
+        assert m.cpu.a == expected
+        assert m.value('clock_acc', 4) == acc - expected * 133514
+    m.put('clock_acc', 0, 4)
+    m.put('clock_active', 0)
     for frame in range(80):
         call(m, 'music_tick')
         advance(230_000 if frame % 7 == 3 else 17_000)

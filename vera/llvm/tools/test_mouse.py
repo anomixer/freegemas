@@ -122,9 +122,15 @@ for vera_slot, card_slot in ((2, 4), (2, 5), (4, 5), (2, 0), (4, 0)):
             m.until(lambda:m.cpu.pc==0x3000 and m.mem.reg[9]==0)
             menu_frame(option_sym,150,66) # Release incoming title click.
             menu_frame(option_sym,150,66,True)
-            assert m.mem.ram[0x3F2]==0,'mouse music toggle'
+            assert m.mem.ram[0x3F2]==2,'mouse music toggle PCM to PSG'
             menu_frame(option_sym,150,66,True)
-            assert m.mem.ram[0x3F2]==0,'held click must not repeat toggle'
+            assert m.mem.ram[0x3F2]==2,'held click must not repeat toggle'
+            menu_frame(option_sym,150,66)
+            menu_frame(option_sym,150,66,True)
+            assert m.mem.ram[0x3F2]==0,'mouse music toggle PSG to OFF'
+            menu_frame(option_sym,150,66)
+            menu_frame(option_sym,150,66,True)
+            assert m.mem.ram[0x3F2]==1,'mouse music toggle OFF to PCM'
             menu_frame(option_sym,150,83)
             menu_frame(option_sym,150,83,True)
             assert m.mem.ram[0x3F3]==0,'mouse sound toggle'

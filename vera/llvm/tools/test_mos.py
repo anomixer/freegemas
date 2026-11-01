@@ -70,6 +70,7 @@ class Memory:
     def __init__(self,slot):
         self.ram=bytearray(65536);self.vram=bytearray(131072)
         self.aux=bytearray(65536);self.aux_read=False;self.aux_write=False;self.aux_present=True
+        self.altzp=False;self.lc_read=False;self.lc_write=False
         self.base=0xC000+slot*256;self.addr=[0,0];self.inc=[0,0];self.ctrl=0
         self.reg=bytearray(32);self.writes=Counter();self.keys_cleared=0;self.frames=0
         self.psg_writes=[]
@@ -81,6 +82,10 @@ class Memory:
         self.pcm_clocked=False
     def __getitem__(self,a):
         if isinstance(a,slice): return self.ram[a]
+        if a==0xC08B:self.lc_read=True;self.lc_write=True;return 0
+        if a==0xC081:self.lc_read=False;self.lc_write=True;return 0
+        if a==0xC082:self.lc_read=False;self.lc_write=False;return 0
+        if a>=0xD000 and self.altzp and self.lc_read:return self.aux[a]
         if self.base<=a<self.base+32:
             r=a-self.base;port=self.ctrl&1
             if r<3:
@@ -146,6 +151,9 @@ class Memory:
         elif a==0xC003:self.aux_read=self.aux_present
         elif a==0xC004:self.aux_write=False
         elif a==0xC005:self.aux_write=self.aux_present
+        elif a==0xC008:self.altzp=False
+        elif a==0xC009:self.altzp=True
+        elif a>=0xD000 and self.altzp and self.lc_write:self.aux[a]=v
         elif a==0xC000:pass # 80STORE off, not keyboard input
         elif 0xC200<=a<0xC220 or 0xC400<=a<0xC420:return
         elif 0x0200<=a<0xC000 and self.aux_write:self.aux[a]=v
@@ -334,7 +342,27 @@ def test(slot):
     m.mem.writes.clear();before=bytes(m.board());m.key(32);m.key(32)
     assert bytes(m.board())==before and not any(a<76800 for a in m.mem.writes)
     print(f'PASS slot {slot}: invalid/same-cell swap leaves board and bitmap unchanged')
+    # At the start of falling, matched sprites may be hidden but every
+    # survivor must remain visible while the board was being refilled.
+    original_step=m.step;checked_survivors=[0]
+    def check_fall_entry():
+        if m.cpu.pc==m.sym['animate_fall'] and m.value('resolving'):
+            old=m.mem.ram[m.sym['before_fall']:m.sym['before_fall']+64]
+            marked=set()
+            for y in range(8):
+                for x in range(8):
+                    i=y*8+x
+                    if x<6 and old[i]==old[i+1]==old[i+2]:marked.update((i,i+1,i+2))
+                    if y<6 and old[i]==old[i+8]==old[i+16]:marked.update((i,i+8,i+16))
+            for i in range(64):
+                if i not in marked and any(j%8==i%8 and j//8>i//8 for j in marked):
+                    assert m.mem.vram[0x1FC06+i*8]&12, ('survivor hidden before fall',i)
+                    checked_survivors[0]+=1
+        original_step()
+    m.step=check_fall_entry
     m.mem.writes.clear();swap(m)
+    m.step=original_step
+    assert checked_survivors[0], 'fixture must check survivors above a match'
     assert m.value('score',4)>0
     # HUD writes permitted, no board bitmap writes, and gems stay enabled/aligned.
     board_writes=sum(n for address,n in m.mem.writes.items() if address<76800 and address%320>=96)

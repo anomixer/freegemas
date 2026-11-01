@@ -41,6 +41,7 @@ void loading_step(void) {
 static Board board;
 static Board before_fall;
 static uint8_t fall_gem[64];
+static uint8_t fall_rows[64];
 static int16_t fall_sy[64];
 static uint16_t fall_dy[64];
 static uint8_t cursor_x = 3, cursor_y = 3, selected = 0, select_x, select_y;
@@ -436,7 +437,18 @@ static void animate_swap(uint8_t ax, uint8_t ay, uint8_t bx, uint8_t by) {
  * travel to their compressed row; replacement gems enter from above. */
 static void animate_fall(const Board *before, const uint8_t marks[8][8]) {
     uint8_t x, y, out, i, slot, active;
-    static const uint8_t progress[17]={0,1,4,9,16,25,36,49,64,81,100,121,144,169,196,225,255};
+    /* Easing offsets indexed by whole rows fallen and animation frame. */
+    static const uint8_t displacement[9][16] = {
+        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 1, 2, 3, 4, 6, 8, 10, 12, 14, 17, 19, 22},
+        {0, 0, 0, 1, 3, 5, 7, 9, 13, 16, 20, 24, 29, 34, 39, 45},
+        {0, 0, 1, 2, 4, 7, 10, 14, 19, 24, 30, 36, 43, 51, 59, 68},
+        {0, 0, 1, 3, 6, 10, 14, 19, 26, 32, 40, 49, 58, 68, 79, 91},
+        {0, 0, 2, 4, 8, 12, 18, 24, 32, 41, 50, 61, 73, 85, 99, 114},
+        {0, 0, 2, 5, 9, 15, 21, 29, 39, 49, 60, 73, 87, 102, 119, 137},
+        {0, 0, 2, 6, 11, 17, 25, 34, 45, 57, 71, 86, 102, 120, 139, 159},
+        {0, 0, 3, 7, 13, 20, 29, 39, 52, 65, 81, 98, 117, 137, 159, 182}
+    };
     for (slot = 0; slot < 64; ++slot) fall_gem[slot] = 0;
     for (x = 0; x < 8; ++x) {
         active = 0;
@@ -447,6 +459,7 @@ static void animate_fall(const Board *before, const uint8_t marks[8][8]) {
             slot = (uint8_t)(out * 8u + x);
             if(out != y) {
                 fall_gem[slot] = before->cells[y][x]; fall_sy[slot] = (int16_t)GEM_Y(y); fall_dy[slot] = GEM_Y(out);
+                fall_rows[slot] = (uint8_t)(out - y);
             }
             --out;
         }
@@ -455,15 +468,18 @@ static void animate_fall(const Board *before, const uint8_t marks[8][8]) {
             slot = (uint8_t)(out * 8u + x);
             fall_gem[slot] = board.cells[out][x];
             fall_sy[slot] = (int16_t)GEM_Y(out) - (int16_t)(active * 26u);
+            fall_rows[slot] = active;
             fall_dy[slot] = GEM_Y(out); --out;
         }
     }
-    for(slot=0;slot<64;slot++)if(fall_gem[slot])
+    /* Populate destinations bottom-up: a survivor's destination is prepared
+     * before its old slot is reused by a gem entering from above. */
+    for(slot=64;slot--;)if(fall_gem[slot])
         put_sprite(slot,(uint16_t)((fall_gem[slot]-1u)*1024u),GEM_X(slot&7u),(uint16_t)fall_sy[slot]);
     for (i = 1; i <= 16; ++i) {
         for (slot = 0; slot < 64; ++slot) if (fall_gem[slot])
-            move_sprite_y(slot, i==16 ? fall_dy[slot] :
-                       (uint16_t)(fall_sy[slot] + (int16_t)(((uint16_t)((int16_t)fall_dy[slot] - fall_sy[slot]) * progress[i]) >> 8)));
+            move_sprite_y(slot, i == 16 ? fall_dy[slot] :
+                          (uint16_t)(fall_sy[slot] + displacement[fall_rows[slot]][i]));
         waitvsync();
     }
     sound_play(SFX_FALL);
@@ -622,7 +638,7 @@ static __attribute__((noinline)) void check_no_moves(void) {
 }
 
 static void select_gem(void) {
-    uint8_t marks[8][8], t, cascade = 0, x, y, frame, bottom;
+    uint8_t marks[8][8], t, cascade = 0, x, y, frame;
     if (!selected) { selected = 1; select_x = cursor_x; select_y = cursor_y; set_cursor_sprite(); sound_play(SFX_SELECT); return; }
     if (board_swap_creates_match(&board, select_x, select_y, cursor_x, cursor_y)) {
         resolving = 1;
@@ -647,11 +663,6 @@ static void select_gem(void) {
             /* Brief sparkle/reveal, then fall. No bitmap erasure or commit. */
             for(y=0;y<8;y++)for(x=0;x<8;x++)if(marks[y][x])hide_sprite((uint8_t)(y*8u+x));
             for(frame=0;frame<6;frame++)waitvsync();
-            for(x=0;x<8;x++) {
-                bottom=0xFF;
-                for(y=0;y<8;y++)if(marks[y][x])bottom=y;
-                if(bottom<8)for(y=0;y<=bottom;y++)hide_sprite((uint8_t)(y*8u+x));
-            }
             board_clear_and_refill(&board, marks);
             animate_fall(&before_fall, marks);
             hint_used = 0;

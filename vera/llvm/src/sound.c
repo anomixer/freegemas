@@ -27,6 +27,7 @@ static uint8_t ready;
 uint16_t pcm_count;
 uint8_t *pcm_pointer;
 uint8_t *pcm_effect;
+extern void pcm_stage(void);
 
 __attribute__((noinline)) void sound_init(void) {
     static const char *const names[5] = {
@@ -92,7 +93,7 @@ uint16_t sound_remaining(void) {
  * may be using port 1 (or the other way round): both the control register and
  * port 0's address/increment are put back before returning. */
 uint8_t *sound_stage(uint16_t max, uint16_t *count) {
-    uint16_t n, take, i;
+    uint16_t n, take;
     uint32_t at;
     uint8_t ctrl, hi;
     uint16_t low;
@@ -107,7 +108,9 @@ uint8_t *sound_stage(uint16_t max, uint16_t *count) {
         low = VERA.address;
         VERA.address = (uint16_t)at;
         VERA.address_hi = (uint8_t)(VERA_INC_1 | (at >> 16));
-        for (i = 0; i < take; ++i) stage[i] = VERA.data0;
+        pcm_pointer = stage;
+        pcm_count = take;
+        pcm_stage();
         VERA.address = low;
         VERA.address_hi = hi;
         VERA.control = ctrl;
