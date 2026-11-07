@@ -86,7 +86,7 @@ Licensed under [Creative Commons: By Attribution 3.0](https://creativecommons.or
 
 ---
 
-This fork add support to run freegemas on WebAssembly (WASM), Apple //e VERA, and Apple IIgs platforms.
+This fork adds support for running Freegemas on WebAssembly (WASM), Apple //e VERA, Commander X16, and Apple IIgs platforms.
 
 ---
 
@@ -106,6 +106,34 @@ An Apple //e VERA port is maintained in [`vera/`](vera/). Read [`vera/README.md`
 - **Graphics**: 320×240 8bpp bitmap mode with persistent VERA hardware gem sprites and top-edge masking.
 - **Audio & Features**: Choose streamed 8-bit PCM music or the original preloaded PSG arrangement; five PCM sound effects are preloaded into VERA VRAM. PSG music and effects need no disk reads during playback. Segmented loader for title, game, instructions, and options; full keyboard and mouse control support.
 - **Requirements**: 128 KB Apple //e with a VERA card in Slot 2 or Slot 4, tested in VERA-enabled AppleWin and on real hardware (VeraSD).
+
+---
+
+## Commander X16 port
+
+A Commander X16 port is maintained in [`x16/`](x16/). Read
+[`x16/README.md`](x16/README.md) (English) or
+[`x16/README-tw.md`](x16/README-tw.md) (繁體中文) for build and run
+instructions.
+
+- **Platform & Engine**: 65C02 code compiled with the LLVM-MOS SDK, a
+  resident loader at `$2000`, and overlays at `$3000`.
+- **Graphics**: 320x240 8bpp VERA bitmap with persistent hardware gem
+  sprites, cursor, hint and score popups.
+- **Audio & Features**: 8,011 Hz mono **16-bit ZCM** music streamed from
+  `hostfs/music.zcm` through the KERNAL `MACPTR` block read, plus the five
+  original signed 8-bit PCM effects preloaded in banked RAM. Effects are mixed
+  into the 16-bit FIFO with the music; Music On/Off is an Options setting.
+  Title, Timetrial, Endless, How to Play, Options, Game Over and high-score
+  persistence are all implemented.
+- **Requirements**: x16emu r49 (Pyrite) or newer, or a real Commander X16.
+  The keyboard path uses the R49 `kbdbuf_get` extapi. All validation so far
+  is x16emu r49 and the browser x16emu WebAssembly r49 build, not
+  real-hardware testing.
+- **Browser web player**: [`x16/web/`](x16/web/) boots the same `hostfs/`
+  build under the official x16emu WebAssembly r49 in a static page; build it
+  with `x16/web/build.ps1` and serve `x16/web/dist/`. See
+  [`x16/web/README.md`](x16/web/README.md).
 
 ---
 
