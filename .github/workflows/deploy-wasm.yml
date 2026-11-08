@@ -1,4 +1,4 @@
-name: Build and Deploy WebAssembly to GitHub Pages
+name: Build and Deploy Freegemas Browser Site
 
 on:
   push:
@@ -10,6 +10,9 @@ on:
       - 'include/**'
       - 'media/**'
       - 'wasm/**'
+      - 'x16/**'
+      - 'vera/freegemas.hdv'
+      - 'web/**'
       - '.github/workflows/deploy-wasm.yml'
   workflow_dispatch:
 
@@ -37,15 +40,26 @@ jobs:
       - name: Verify Emscripten
         run: emcc --version
 
-      - name: Build WebAssembly
+      - name: Build native WebAssembly player
         run: |
           chmod +x wasm/build.sh
           wasm/build.sh
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build Commander X16 browser player
+        run: node x16/web/build.mjs
+
+      - name: Assemble landing page and players
+        run: node web/build-site.mjs
+
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: wasm/dist
+          path: web/_site
 
   deploy:
     environment:

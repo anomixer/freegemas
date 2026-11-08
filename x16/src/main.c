@@ -322,29 +322,39 @@ static void upload_scene(void) {
 /* The original grid is 26 pixels apart.  Hardware sprites let the 24-pixel
  * art sit on that exact pitch; forcing it into 8-pixel tiles was the source
  * of the accumulating checkerboard offset. */
+/* The KERNAL owns sprite 0 while the mouse is enabled (it repositions it on
+ * every scan), so the 8x8 board starts at slot 1 and uses 1..64. */
+static uint8_t gem_slot(uint8_t slot) {
+    return slot < 64u ? (uint8_t)(slot + 1u) : slot;
+}
+
 static void put_sprite(uint8_t slot, uint16_t pattern, uint16_t x, uint16_t y) {
     uint32_t full = SPRITE_PATTERNS + pattern;
+    slot = gem_slot(slot);
     vram_at(0x1FC00u + (uint32_t)slot * 8u);
     VERA.data0 = (uint8_t)(full >> 5);
     VERA.data0 = (uint8_t)((full >> 13) | 0x80u); /* 8bpp */
     VERA.data0 = (uint8_t)x; VERA.data0 = (uint8_t)(x >> 8);
     VERA.data0 = (uint8_t)y; VERA.data0 = (uint8_t)(y >> 8);
-    VERA.data0 = 0x08;                         /* z-depth 2: overlays above gems */
+    VERA.data0 = 0x08;                         /* z-depth 2: above the bitmap */
     VERA.data0 = 0xA0;                         /* 32 x 32 */
 }
 
 static void hide_sprite(uint8_t slot) {
+    slot = gem_slot(slot);
     vram_at(0x1FC06u + (uint32_t)slot * 8u);
     VERA.data0 = 0;
 }
 
 static void move_sprite(uint8_t slot, uint16_t x, uint16_t y) {
+    slot = gem_slot(slot);
     vram_at(0x1FC02u+(uint16_t)slot*8u);
     VERA.data0=(uint8_t)x;VERA.data0=(uint8_t)(x>>8);
     VERA.data0=(uint8_t)y;VERA.data0=(uint8_t)(y>>8);
 }
 
 static void move_sprite_y(uint8_t slot,uint16_t y) {
+    slot = gem_slot(slot);
     VERA.control=0;VERA.address_hi=0x11;
     VERA.address=(uint16_t)(0xFC04u+((uint16_t)slot<<3));
     VERA.data0=(uint8_t)y;VERA.data0=(uint8_t)(y>>8);

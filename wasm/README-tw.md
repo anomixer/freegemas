@@ -4,6 +4,9 @@
 
 本目錄包含 Freegemas 的 WebAssembly（WASM）建置設定，讓原版 C++ SDL2 遊戲能以 60 FPS 直接在現代瀏覽器中流暢運行，無需安裝任何外掛套件。
 
+線上版本：<https://anomixer.github.io/freegemas/wasm/>。倉庫根目錄是四個平台的入口頁：
+<https://anomixer.github.io/freegemas/>。
+
 ## 架構與特性
 
 - **核心架構**：使用 [Emscripten](https://emscripten.org/) 直接將原版 C++ 原始碼（`src/`、`include/`）編譯為 WebAssembly。
@@ -19,8 +22,9 @@
 
 本專案已設定好 [`.github/workflows/deploy-wasm.yml`](../.github/workflows/deploy-wasm.yml)。只要推送至 `master` 分支，GitHub Actions 就會自動：
 1. 下載並設定最新版 Emscripten SDK。
-2. 自動編譯遊戲並打包資產。
-3. 自動發布並更新至 GitHub Pages。
+2. 編譯本 WASM 版本並打包資產。
+3. 建置 Commander X16 瀏覽器版與四平台入口頁。
+4. 將組合後的網站發布至 GitHub Pages；本版本位於 `/freegemas/wasm/`。
 
 啟用 GitHub Pages 方式：
 - 進入 GitHub 專案的 **Settings** > **Pages**。

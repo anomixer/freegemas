@@ -1,152 +1,180 @@
 <p align="center">
-    <img src="https://raw.githubusercontent.com/JoseTomasTocino/freegemas/static/images/header_logo.png"><br>
-    <img src="https://raw.githubusercontent.com/JoseTomasTocino/freegemas/static/images/header_gems.png"><br>
+  <img src="web/assets/freegemas-logo.png" width="317" alt="Freegemas"><br>
+  <img src="web/assets/gems/gemWhite.png" width="28" alt="">
+  <img src="web/assets/gems/gemRed.png" width="28" alt="">
+  <img src="web/assets/gems/gemPurple.png" width="28" alt="">
+  <img src="web/assets/gems/gemOrange.png" width="28" alt="">
+  <img src="web/assets/gems/gemGreen.png" width="28" alt="">
+  <img src="web/assets/gems/gemYellow.png" width="28" alt="">
+  <img src="web/assets/gems/gemBlue.png" width="28" alt="">
 </p>
 
-__Freegemas__ is an open source version of the well known Bejeweled, for GNU/Linux, Windows, Mac and Playstation Vita. It's written in C++ using [SDL2](https://www.libsdl.org/). In the past it used Gosu instead of SDL2, and the old repository can be found at [Google Code](https://code.google.com/archive/p/freegemas/).
+# Freegemas — four ports, one gem board
 
-<p align="center">
-    <img src="https://raw.githubusercontent.com/JoseTomasTocino/freegemas/static/images/screenshot_1.png">
-</p>    
-        
+Freegemas is an open-source version of the well-known **Bejeweled**, written in
+C++ with [SDL2](https://www.libsdl.org/).  The original project is
+[JoseTomasTocino/freegemas](https://github.com/JoseTomasTocino/freegemas); this
+fork adds native WebAssembly, A2VERA (Apple //e with VERA), Commander X16 and
+Apple IIgs ports, plus browser players for all four targets.
 
+**Play in a browser:** <https://anomixer.github.io/freegemas/>
 
-## Installation on Debian-based GNU/Linux systems
+## Play in your browser
 
-First, you need to install git and gcc:
+Every target has a browser player.  The native WebAssembly and X16 players are
+built from this repository and served from its GitHub Pages site; the two Apple
+II players use dedicated browser emulators.
 
-    sudo apt-get install git build-essential cmake
+| Target | Play | What runs there |
+| --- | --- | --- |
+| **Landing page** | **[OPEN THE PLAYER SELECTOR](https://anomixer.github.io/freegemas/)** | the four cards below, with local WebAssembly and X16 players |
+| **Native WebAssembly** | **[PLAY HERE](https://anomixer.github.io/freegemas/wasm/)** | the original C++/SDL2 game compiled with Emscripten; WebGL rendering and Web Audio sound |
+| **Commander X16** | **[PLAY HERE](https://anomixer.github.io/freegemas/x16/)** | the 65C02S + VERA port under the official X16Community x16emu WebAssembly r49, booting the same `hostfs/` files as native x16emu |
+| **A2VERA (Apple //e + VERA)** | **[PLAY HERE](https://apple2ts.com/?slot2=vera&tab=vera#https://raw.githubusercontent.com/anomixer/freegemas/master/vera/freegemas.hdv)** | Apple2TS streaming [`vera/freegemas.hdv`](vera/freegemas.hdv); VERA must be in slot 2 or 4 |
+| **Apple IIgs** | **[PLAY HERE](https://a2gsemu-ia.pages.dev/?lang=en&game=https%3A%2F%2Fgithub.com%2Fanomixer%2Ffreegemas)** | a2gsemu-ia booting the IIgs 2MG release from this repository |
 
-Next, install SDL2 and JsonCpp from the repositories:
+The four ports share the same board, gem art, menu flow and rules.  Browser
+audio needs a click before it can start; the native desktop build is still the
+way to run the game without an emulator or WASM runtime.
 
-    sudo apt-get install libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev libsdl2-mixer-dev libjsoncpp-dev
-    
-After that, clone the repo:
+## Ports at a glance
 
-    git clone https://github.com/JoseTomasTocino/freegemas.git
-    
-Do an out-of-source compilation and run the program:
+| Directory | Target | Deliverable / build |
+| --- | --- | --- |
+| [`wasm/`](wasm/) | Native C++ / WebAssembly | `wasm/dist/` — Emscripten build, published as `/freegemas/wasm/` |
+| [`x16/`](x16/) | Commander X16 (65C02S + VERA) | `x16/hostfs/boot.prg`; browser build in `x16/web/dist/`, published as `/freegemas/x16/` |
+| [`vera/`](vera/) | Apple //e / IIe with a VERA card | [`vera/freegemas.hdv`](vera/freegemas.hdv) — 2 MB ProDOS image, streamed by Apple2TS |
+| [`iigs/`](iigs/) | Apple IIgs (65816, Super Hi-Res) | [`iigs/merlin32/build/freegemas.2mg`](iigs/merlin32/build/freegemas.2mg) — bootable 2MG image |
+| [`web/`](web/) | GitHub Pages landing page | assembles the four cards and copies the WASM + X16 players into `web/_site/` |
+| `src/`, `include/`, `media/` | original desktop game | the C++/SDL2 sources, headers and game assets |
 
-    cd freegemas
-    mkdir build
-    cd build
-    cmake ..
-    make
-    ./freegemas
+## Browser site build
 
-## Installation on OS X
+The landing page is maintained in [`web/`](web/).  It does not compile the
+ports itself; build them first, then assemble the static site:
 
-This assumes that you are already using [Homebrew](https://brew.sh/). You will need CMake and a few libraries to compile Freegemas:
+```bash
+# 1. Native WebAssembly (requires the Emscripten SDK)
+./wasm/build.sh
 
-    brew install cmake sdl2 sdl2_mixer sdl2_ttf sdl2_image gettext jsoncpp
+# 2. Commander X16 browser player (Node.js 20+)
+node ./x16/web/build.mjs
 
-Now run the following commands to setup your environment to use Homebrew as a backup location for libraries.
-
+# 3. Landing page and both players
+node ./web/build-site.mjs
 ```
+
+On Windows use `wasm\build.ps1` for step 1; the other commands are the same.
+The result is `web/_site/`; serve it over HTTP, for example:
+
+```bash
+python3 -m http.server 8123 --directory web/_site
+```
+
+The GitHub Actions workflow
+[`.github/workflows/deploy-wasm.yml`](.github/workflows/deploy-wasm.yml)
+builds the same three pieces on pushes to `master` and publishes `web/_site/`
+to GitHub Pages.  See [`web/README.md`](web/README.md) and
+[`web/README-tw.md`](web/README-tw.md) for the site layout and deployment
+details.
+
+The deployed paths are:
+
+- landing page: `https://anomixer.github.io/freegemas/`
+- native WebAssembly: `https://anomixer.github.io/freegemas/wasm/`
+- Commander X16: `https://anomixer.github.io/freegemas/x16/`
+
+A2VERA and IIgs are external browser emulators, so they are linked directly and
+are not copied into `web/_site/`.
+
+## Commander X16 port
+
+The X16 port lives in [`x16/`](x16/).  It is 65C02 code built with the
+[LLVM-MOS SDK](https://github.com/llvm-mos/llvm-mos-sdk), with a resident loader
+and overlays, a 320×240 8bpp VERA bitmap, persistent hardware gem sprites and
+the original five signed 8-bit PCM effects.  Music is a **16-bit mono
+8,010.864 Hz ZCM** stream read from `hostfs/music.zcm` through KERNAL `MACPTR`,
+mixed with the effects into the 16-bit FIFO; music can be disabled from Options.
+High scores persist through HostFS.
+
+The browser player in [`x16/web/`](x16/web/) boots the same `hostfs/` build
+under the official x16emu WebAssembly r49.  Native validation and the browser
+player both use x16emu r49; neither is real-hardware validation.  See
+[`x16/README.md`](x16/README.md), [`x16/README-tw.md`](x16/README-tw.md) and
+[`x16/web/README.md`](x16/web/README.md).
+
+## A2VERA port (Apple //e + VERA)
+
+The VERA port lives in [`vera/`](vera/).  It uses LLVM-MOS 65C02 code, a
+320×240 8bpp bitmap with hardware gem sprites and a 2 MB ProDOS HDV.  It offers
+streamed 8-bit PCM music or the preloaded PSG arrangement, with five PCM sound
+effects in VERA VRAM; the segmented loader covers title, game, instructions and
+options.  See [`vera/README.md`](vera/README.md) and
+[`vera/AGENTS.md`](vera/AGENTS.md).
+
+Browser play uses Apple2TS and the HDV from this repository.  This is browser
+emulation, not a claim of new real-hardware testing in this change.
+
+## Apple IIgs port
+
+The IIgs port lives in [`iigs/`](iigs/).  It is a 320×200 Super Hi-Res game
+built with Merlin32, with VERA-inspired title, How-to-Play and Options screens,
+DOC music streamed through alternating 4 KiB wave tables, and separate DOC
+oscillator pairs for effects.  The deliverable is the bootable
+[`freegemas.2mg`](iigs/merlin32/build/freegemas.2mg) image; GS/OS and Ensoniq
+DOC audio are required.  See [`iigs/README.md`](iigs/README.md) and
+[`iigs/AGENTS.md`](iigs/AGENTS.md) for build steps and the current validation
+caveats.
+
+Browser play uses a2gsemu-ia.  This page does not imply that the IIgs port was
+newly tested on real hardware.
+
+## Native desktop builds
+
+The original desktop game is still built from the repository root.  On
+Debian-based GNU/Linux systems:
+
+```bash
+sudo apt-get install git build-essential cmake \
+  libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev \
+  libsdl2-mixer-dev libjsoncpp-dev
+
+git clone https://github.com/anomixer/freegemas.git
+cd freegemas
+mkdir build && cd build
+cmake ..
+make
+./freegemas
+```
+
+On macOS, install the dependencies with Homebrew and use the same CMake flow:
+
+```bash
+brew install cmake sdl2 sdl2_mixer sdl2_ttf sdl2_image gettext jsoncpp
 [[ -z "${LIBRARY_PATH}" ]] && export LIBRARY_PATH=/usr/local/lib
 export LIBRARY_PATH="$LIBRARY_PATH:$(brew --prefix)/lib"
 ```
 
-After that, clone the repo:
+The original PlayStation Vita build is also retained:
 
-    git clone https://github.com/JoseTomasTocino/freegemas.git
-    
-Do an out-of-source compilation and run the program:
+```bash
+mkdir vita && cd vita
+cmake -DCMAKE_TOOLCHAIN_FILE="${VITASDK}/share/vita.toolchain.cmake" ..
+make
+```
 
-    cd freegemas
-    mkdir build
-    cd build
-    cmake ..
-    make
-    ./freegemas
-
-## Installation on Playstation Vita
-
-For building for Vita, the [Vita SDK](https://vitasdk.org) should be installed.
-
-After that, clone the repo:
-
-    git clone https://github.com/JoseTomasTocino/freegemas.git
-
-Do an out-of-source compilation:
-
-    cd freegemas
-    mkdir vita
-    cd vita
-    cmake -DCMAKE_TOOLCHAIN_FILE="${VITASDK}/share/vita.toolchain.cmake" ..
-    make
-
-Now ``freegemas.vpk`` can be tranfered and installed on Vita.
+This produces `freegemas.vpk`, which can be transferred and installed on a Vita.
 
 ## Music licensing
 
-The music in the game is [Easy Lemon by Kevin MacLeod](https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1200076)
-Licensed under [Creative Commons: By Attribution 3.0](https://creativecommons.org/licenses/by/3.0/)
+The music in the game is [Easy Lemon by Kevin MacLeod](https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1200076),
+licensed under [Creative Commons: By Attribution 3.0](https://creativecommons.org/licenses/by/3.0/).
 
+## Validation scope
 
----
-
-This fork adds support for running Freegemas on WebAssembly (WASM), Apple //e VERA, Commander X16, and Apple IIgs platforms.
-
----
-
-## WebAssembly (WASM) port - 👉 [PLAY HERE](https://anomixer.github.io/freegemas/)
-
-A WebAssembly port is maintained in [`wasm/`](wasm/). It compiles the native C++ SDL2 game directly to WebAssembly using [Emscripten](https://emscripten.org/), running at 60 FPS in any modern web browser with WebGL and Web Audio API.
-
-Read [`wasm/README.md`](wasm/README.md) and [`wasm/README-tw.md`](wasm/README-tw.md) for architecture and local build instructions. Automated deployment to GitHub Pages is supported via [`.github/workflows/deploy-wasm.yml`](.github/workflows/deploy-wasm.yml).
-
----
-
-## Apple //e VERA port - 👉 [PLAY HERE](https://apple2ts.com?slot2=vera&tab=vera#https://raw.githubusercontent.com/anomixer/freegemas/master/vera/freegemas.hdv)
-
-An Apple //e VERA port is maintained in [`vera/`](vera/). Read [`vera/README.md`](vera/README.md) and [`vera/AGENTS.md`](vera/AGENTS.md) for build instructions and technical details.
-
-- **Platform & Engine**: Compiled to 65C02 native code using the [LLVM-MOS SDK](https://github.com/llvm-mos/llvm-mos-sdk). Uses a 2 MB ProDOS HDV disk image ([`vera/freegemas.hdv`](vera/freegemas.hdv)).
-- **Graphics**: 320×240 8bpp bitmap mode with persistent VERA hardware gem sprites and top-edge masking.
-- **Audio & Features**: Choose streamed 8-bit PCM music or the original preloaded PSG arrangement; five PCM sound effects are preloaded into VERA VRAM. PSG music and effects need no disk reads during playback. Segmented loader for title, game, instructions, and options; full keyboard and mouse control support.
-- **Requirements**: 128 KB Apple //e with a VERA card in Slot 2 or Slot 4, tested in VERA-enabled AppleWin and on real hardware (VeraSD).
-
----
-
-## Commander X16 port
-
-A Commander X16 port is maintained in [`x16/`](x16/). Read
-[`x16/README.md`](x16/README.md) (English) or
-[`x16/README-tw.md`](x16/README-tw.md) (繁體中文) for build and run
-instructions.
-
-- **Platform & Engine**: 65C02 code compiled with the LLVM-MOS SDK, a
-  resident loader at `$2000`, and overlays at `$3000`.
-- **Graphics**: 320x240 8bpp VERA bitmap with persistent hardware gem
-  sprites, cursor, hint and score popups.
-- **Audio & Features**: 8,011 Hz mono **16-bit ZCM** music streamed from
-  `hostfs/music.zcm` through the KERNAL `MACPTR` block read, plus the five
-  original signed 8-bit PCM effects preloaded in banked RAM. Effects are mixed
-  into the 16-bit FIFO with the music; Music On/Off is an Options setting.
-  Title, Timetrial, Endless, How to Play, Options, Game Over and high-score
-  persistence are all implemented.
-- **Requirements**: x16emu r49 (Pyrite) or newer, or a real Commander X16.
-  The keyboard path uses the R49 `kbdbuf_get` extapi. All validation so far
-  is x16emu r49 and the browser x16emu WebAssembly r49 build, not
-  real-hardware testing.
-- **Browser web player**: [`x16/web/`](x16/web/) boots the same `hostfs/`
-  build under the official x16emu WebAssembly r49 in a static page; build it
-  with `x16/web/build.ps1` and serve `x16/web/dist/`. See
-  [`x16/web/README.md`](x16/web/README.md).
-
----
-
-## Apple IIGS port - 👉 [PLAY HERE](https://a2gsemu-ia.pages.dev/?lang=en&game=https%3A%2F%2Fgithub.com%2Fanomixer%2Ffreegemas)
-
-An Apple IIGS port is maintained in [`iigs/`](iigs/). Read [`iigs/AGENTS.md`](iigs/AGENTS.md) for the current implementation notes and build instructions. The 320x200 Super Hi-Res game uses the same flat gem artwork in gameplay and the How to Play diagrams. The gameplay board uses source-aligned wood shading with its color and contrast tuned to the VERA port; the flat gem artwork remains unchanged. The 8-column board is framed with symmetric 2px black borders and 12px outer margins (`x=96..307`). Title, How to Play, and Options share the VERA-inspired blue ray backdrop, with screen-specific 12-bank palettes and an even 4×4 Bayer dither pattern. The How to Play gems and crisp menu artwork retain their dedicated colors. The Options screen credits the IIGS port to anomixer and uses the larger VERA-aligned menu text.
-
-The bootable 2MG disk image is built at [`iigs/merlin32/build/freegemas.2mg`](iigs/merlin32/build/freegemas.2mg), including `README.TXT` V1.0.
-
-The IIGS Finder icon uses the game's square red gem. The build streams its DOC music through alternating 4 KiB wave tables. Table changes are synchronized to the DOC end interrupt, while PCM preparation stays in the foreground. Sound effects use separate DOC oscillator pairs. The current audio IRQ build was tested in GSplus: after a continuous capture, the user played a full round and reported no music skips, including during gameplay. Exit with the callback installed, other emulators, and real IIGS hardware still need verification. See [`iigs/AGENTS.md`](iigs/AGENTS.md) for implementation details and the latest validation status.
-
-### Apple IIgs hardware requirements
-
-- Apple IIgs or a compatible emulator, GS/OS, and working Ensoniq DOC audio. The game uses 320x200 Super Hi-Res graphics.
-- **Memory: 2 MB total is the minimum recommended target; 4 MB or more is preferred.** The 1,413,400-byte music track (about 1.35 MiB) is loaded into a locked RAM handle when music starts. GS/OS, the game, and its graphics banks also need memory, so a 2 MB system may not have enough free RAM to cache the whole song. Apple’s ROM 03 IIgs shipped with 1 MB and supports RAM expansion; see the [IIgs specifications](https://www.savagetaylor.com/TIL/TIL07889.pdf).
-- If the full-song cache cannot be allocated, the game falls back to HD streaming. This fallback was exercised in GSSquared with the RAM cache deliberately disabled: a roughly 160-second audio capture had no clipping and the game reported no music read errors. GSSquared cannot model the requested 1.25 MB ROM 01 configuration through its profile, so this verifies the fallback path but does not replace testing on low-memory hardware.
+The browser landing page, the local static build flow and the four player cards
+are website work.  The native WebAssembly and X16 WebAssembly players are built
+by GitHub Actions; their generated files are not committed.  A2VERA and IIgs
+run through their external browser emulators.  The port-specific READMEs record
+the emulator and real-hardware validation status separately; nothing in this
+page replaces testing on a physical Commander X16, Apple //e VERA or Apple IIgs.

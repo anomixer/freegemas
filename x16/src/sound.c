@@ -13,11 +13,10 @@
 #include "apple2e.h"
 #define EFFECT_FIRST_BANK 24u
 #define EFFECT_BASE 0xA000u
-/* The music feeder can hand over up to 268 bytes (134 samples) per VSYNC.
- * The stage must hold a whole run: the old 80-byte stage only mixed the
- * first 40 samples of every frame, leaving the rest of the effect out and
- * making every match sound chopped/sandy. */
-#define EFFECT_STAGE_BYTES 320u
+/* One feed call can carry up to 510 bytes (255 samples) while catching up.
+ * The old 320-byte (160-sample) stage covered only part of that call, so the
+ * rest of the run was music-only and the effect sounded chopped. */
+#define EFFECT_STAGE_BYTES 512u
 #define EFFECT_STAGE_SAMPLES (EFFECT_STAGE_BYTES / 2u)
 extern uint8_t mli_status;
 extern void disk_read(uint16_t block, uint8_t *dest);
@@ -26,7 +25,7 @@ typedef struct { uint8_t bank; uint16_t length; } Sample;
 static Sample samples[5];
 /* Disk/PCM staging page shared with the scene and music loaders. */
 static uint8_t *const buffer = (uint8_t *)0x0C00;
-/* $0F00 is the effects state page; keep the 320-byte effect stage below the
+/* $0F00 is the effects state page; keep the 512-byte effect stage below the
  * loader at $2000 and clear of that page. */
 static uint8_t *const stage = (uint8_t *)0x1000u;
 static uint16_t stage_read, stage_write;
@@ -97,34 +96,31 @@ uint16_t sound_remaining(void) {
  * to a contiguous music run.  Each effect lives at the start of its own bank,
  * so a full 2403-sample match (4806 bytes) never crosses $BFFF. */
 uint8_t *sound_stage(uint16_t max, uint16_t *count) {
-    uint16_t n_bytes, take;
+    uint16_t take, bytes;
     *count = 0;
     if (!effect_remaining) return 0;
-    if (stage_read == stage_write) {
-        take = effect_remaining > EFFECT_STAGE_SAMPLES ? EFFECT_STAGE_SAMPLES : effect_remaining;
-        *(volatile uint8_t *)0x00 = effect_bank;
-        {
-            uint16_t i, bytes = (uint16_t)(take * 2u);
-            for (i = 0; i < bytes; ++i)
-                stage[i] = *(volatile uint8_t *)(EFFECT_BASE + effect_source + i);
-        }
-        *(volatile uint8_t *)0x00 = X16_HUD_BANK;
-        effect_source += (uint32_t)take * 2u;
-        stage_read = 0;
-        stage_write = (uint16_t)(take * 2u);
+    /* Every caller consumes the returned samples in the same music run.
+       Load a fresh, complete slice each time instead of returning a one-sample
+       leftover from a 512-byte stage.  The old leftover path left most of the
+       next 255-sample run without effect data, which is heard as choppy,
+       intermittent match sounds. */
+    take = effect_remaining > max ? max : effect_remaining;
+    if (take > EFFECT_STAGE_SAMPLES) take = EFFECT_STAGE_SAMPLES;
+    bytes = (uint16_t)(take * 2u);
+    *(volatile uint8_t *)0x00 = effect_bank;
+    {
+        uint16_t i;
+        for (i = 0; i < bytes; ++i)
+            stage[i] = *(volatile uint8_t *)(EFFECT_BASE + effect_source + i);
     }
-    n_bytes = (uint16_t)(stage_write - stage_read);
-    if (n_bytes > (uint16_t)(effect_remaining * 2u))
-        n_bytes = (uint16_t)(effect_remaining * 2u);
-    if (n_bytes > (uint16_t)(max * 2u))
-        n_bytes = (uint16_t)(max * 2u);
-    n_bytes = (uint16_t)(n_bytes & 0xFFFEu);
-    *count = (uint16_t)(n_bytes / 2u);
-    return stage + stage_read;
+    *(volatile uint8_t *)0x00 = X16_HUD_BANK;
+    effect_source += bytes;
+    stage_read = 0;
+    stage_write = bytes;
+    *count = take;
+    return stage;
 }
 
 void sound_stage_commit(uint16_t n) {
-    uint16_t bytes = (uint16_t)(n * 2u);
-    stage_read = (uint16_t)(stage_read + bytes);
     effect_remaining = (uint16_t)(effect_remaining - n);
 }

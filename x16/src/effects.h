@@ -1,7 +1,11 @@
 #ifndef EFFECTS_H
 #define EFFECTS_H
 #include "board.h"
-enum { EFFECT_MOUSE_SLOT = 64, EFFECT_HINT_SLOT = 65, EFFECT_CURSOR_SLOT = 66, EFFECT_SELECTION_SLOT = 67 };
+/* Slot 0 belongs to the KERNAL mouse; gems use 1..64.  At equal z-depth the
+ * lower slot wins, so the hand (65) is in front of the hint (66) and
+ * cursor/selection (67/68), while the hint stays early enough to render
+ * before VERA's sprite clock budget runs out. */
+enum { EFFECT_MOUSE_SLOT = 65, EFFECT_HINT_SLOT = 66, EFFECT_CURSOR_SLOT = 67, EFFECT_SELECTION_SLOT = 68 };
 void effects_init(void);
 void effects_clear(void);
 void effects_tick(void);

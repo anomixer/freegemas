@@ -72,7 +72,8 @@ C:\dev\emu\x16emu\x16emu.exe `
 
 [`web/`](web/) 是獨立的瀏覽器版播放頁。它使用官方 x16-emulator
 WebAssembly r49，並載入同一份 `hostfs/`，因此瀏覽器裡跑的是真正的 X16
-KERNAL 與 `boot.prg`：
+KERNAL 與 `boot.prg`。公開播放頁位於四平台入口頁的
+<https://anomixer.github.io/freegemas/x16/>：
 
 ```powershell
 cd C:\dev\freegemas\x16\web
@@ -98,6 +99,23 @@ python -m http.server 8123 --directory .\dist
 X16 鍵盤搖桿對應的方向鍵與 A/B 也可操作（方向鍵、`X`/`Ctrl` 與
 `Z`/`Alt` 分別對應 A/B）。目前只輪詢 joystick 0。
 
+## Sprite 圖層與滑鼠游標
+
+slot 0 屬於 KERNAL 滑鼠驅動，遊戲不使用。配置如下：寶石 **1-64**、手套
+**65**、提示框 **66**、游標框 **67**、選取框 **68**、浮動數字 **69-88**、
+粒子 **89-120**、選單指標 **127**。寶石用 VERA z-depth 2（layer 0 與
+layer 1 之間），覆蓋層與手套用 z-depth 3（layer 1 前面）。同 z-depth 時
+**attribute 位址較低**的 sprite 畫在前面，所以 slot 65 的手套會在 slot 67
+游標框與 slot 68 選取框之上；舊版手套在 slot 126，才會被 slot 66 的框壓住。
+slot 126 也太後面，提示框的右／下邊會被 VERA scanline sprite-clock 預算
+截掉，因此提示框留在 slot 66。title 寶石同樣用 z-depth 2，讓 slot 127、
+z-depth 3 的選單手套保持可見。選單手套使用 sprite palette offset 15 與
+private entries 251/252（白、黑）；否則會繼承 title palette 的 index 15，
+也就是暗紅色。
+
+常數在 [effects.h](src/effects.h#L8)；寫入 VERA attribute 的程式在
+[effects.c](src/effects.c#L36-L41) 與 [main.c](src/main.c#L331-L340)。
+
 ## 音樂與音訊路徑
 
 - `media/music.ogg` 先解碼、downmix 成單聲道，使用 `soxr` VHQ 重取樣為
@@ -106,31 +124,41 @@ X16 鍵盤搖桿對應的方向鍵與 A/B 也可操作（方向鍵、`X`/`Ctrl` 
   16-bit mono，VERA rate `21`。輸出的 `assets/music.zcm` 是 2,024,422 bytes，
   頭尾各 40 samples 的 fade 讓循環不會爆音。
 - `music.c` 在啟動 I/O 完成後開啟 ZCM，用 `MACPTR` 讀取（跳過 8-byte
-  標頭），所以 2 MB 音樂從不佔用 banked RAM。VERA FIFO 先在 clock 暫停時
-  預填到滿（4 KB），之後依照 FIFO 實際空位需求補資料，必要時混入音效；
-  串流維持開啟。播到 EOF 時關閉串流並靜音（音樂長度超過一局 Timetrial）。
+  標頭），所以 2 MB 音樂從不佔用 banked RAM。clock 暫停時先預填
+  **2,048 bytes**（約 128 ms），之後依照**實際經過的 VSYNC 數**補資料，而
+  不是每個迴圈固定補一個 frame。8,010.864 Hz 下一個 VSYNC 消耗
+  **267.03 bytes**；feeder 用 VERA audio-low 旗標在 FIFO 空掉前補，
+  每個 frame 最多做八次 510-byte catch-up。EOF 時先排空 pending 與 FIFO，
+  再關閉串流並靜音。
 - 五個音效由 `tools/build_effects.py` 從原始 OGG 重建：soxr VHQ 轉成
   8,010.864 Hz、mono、峰值正規化，存成 little-endian signed 16-bit PCM。
   每個音效各自預載到 bank 24-28 的 `$A000`，所以 4,806 bytes 的 match 音效
   不會跨過 `$BFFF` 邊界而截斷 MATCH3。`music.c` 的 `mix_effect16()` 在
-  音樂 RAM buffer 裡做完整 16-bit 相加與 clip；`pcm_copy` 再逐 byte 寫入
-  FIFO，並保留沒送完的尾巴到下一 frame。VERA 使用 16-bit mono、volume 10
-  （`0x2A`）。
-- 音效 stage 改為 **`$1000` 的 320 bytes／160 samples**。每個 music frame
-  最多會送來 268 bytes／134 samples；舊的 80-byte（40-sample）stage 只混到
-  每個音效的前段，剩下的 sample 只有音樂，這正是 match 音效被切碎、沙啞的
-  原因。現在一個 frame 的完整音效都會以 8,010.864 Hz 混入。
+  音樂 RAM buffer 裡做完整 16-bit 相加與 clip；`pcm_copy` 只寫完整的
+  16-bit pair，沒送完的資料由 `music.c` 留到下一 frame。VERA 使用 16-bit
+  mono、volume 10（`0x2A`）。
+- 音效 stage 是 **`$1000` 的 512 bytes／256 samples**。一次 catch-up 最多
+  要求 **510 bytes／255 samples**；舊的 320-byte（160-sample）stage 只混到
+  該次要求的前段，其餘只剩音樂。舊程式另外會在 512-byte 載入後留下
+  **1 sample** 的尾巴，下一次 255-sample run 只有那 1 sample 有音效，其餘
+  又變成音樂。這兩個路徑都會讓 match 音效斷斷續續；現在 `sound_stage()`
+  每次呼叫都重新載入一整段，修正了切碎感。
 - X16 場景另外移除計時器面板的深藍色 `88:88` 殘影，並把 Show hint／
   Reset game／Exit 按鈕上那道硬的漸層橫線整平。計時器改用
   `media/fuentelcd.ttf` 產生的 12×18 LCD 字形，對齊到 x=75 的右緣；前景
   數字與 LED 高度一致，不會再留下比較大的黑色殘影。
-- **音訊雜音原因都已修正。** `MACPTR` 只在 **X** 回傳實際讀到的 byte 數；
-  舊程式把 **Y** 也當成 count 的高 byte，會播放 staging buffer 裡的殘留
-  byte。舊 `pcm_copy` 只在開頭檢查一次 FIFO full，之後仍盲目寫入而丟 byte；
-  現在每個 byte 都檢查，剩下的 byte 會保留到下一 frame 重送。舊音效是
-  8-bit、峰值又低，只剩少數有效位元，聽起來沙啞；現在改成 16-bit。
-  修正後擷取的原生 WAV 在前 20 秒與 `assets/music.zcm` 相關性為 **1.0**，
-  沒有靜音斷點，match 後也仍與音樂相關。
+- **目前找到的音訊爆音原因都已修正。** `pcm_read` 有兩個
+  `beq pcm_read_done` 距離目標超過 127 bytes；組譯器把相對位移截成
+  `B7`，所以每次讀取剛好消耗完剩餘 count 時，65C02 會**往回跳**到
+  `$3142`，把 `FF AD 44` 當成 Rockwell `BBS7` 執行。這正是
+  `Warning: encountered Rockwell instruction BBS at $00:3143` 的來源；
+  它也會走進 `pcm_open_fail` 尾段，破壞讀取狀態。兩個分支已改成
+  區域 `bne` 加 `jmp`，修正後的擷取不再出現這個警告。
+  另外，`MACPTR` 的實際讀取數在 **X（低位）與 Y（高位）** 回傳，不是只有
+  X；舊程式寫 `lda #0; sta pcm_read_hi`，把每次 267／510-byte 的讀取
+  縮成 11／0 bytes，讓 16-bit 串流整體位移。現在 X、Y 都保留。
+  `pcm_copy` 只寫完整 16-bit pair，未送完的尾巴由 `music.c` 保留；
+  音效是 signed 16-bit PCM。先前的「相關性 1.0」說法是錯的，已移除。
 - Music On/Off 是 Options 設定。即使 Music 關閉，串流仍會開啟但樣本清零，
   因此兩種模式共用同一套 16-bit 音效 mixer；Music Off 時只會聽到音效。
   按 `R` 只重設盤面與音效，**不重新開啟串流**（遊戲中重開 HostFS channel
@@ -161,33 +189,43 @@ loader 以 HostFS 小寫檔名讀取所有素材，因此整個 `hostfs/` 目錄
 
 ## 驗證狀態
 
-目前只在 **x16emu r49（Pyrite）** 驗證，**尚未在實機 Commander X16
-測試**：
+只在 **x16emu r49（Pyrite）**、Windows、以 WAV 與截圖驗證。**沒有實機
+Commander X16**，也**沒有真人耳朵聽感測試**；下面對音訊的描述都是
+envelope／peak／zero-run／頻譜量測，不是「聽起來如何」的主張。
 
-- 滑鼠指標可繪製，且已加入 KERNAL `mouse_scan`／`mouse_get` 輪詢；但
-  合成宿主滑鼠移動**沒有**推動模擬器指標，實機／`-capture` 滑鼠移動仍待驗證；
-- 開機、intro、title、How to Play、Options、Timetrial 與 Endless 載入；
-- 原生 x16emu 遊戲迴圈可持續倒數、棋盤可互動；舊的 FIFO 半個 sample
-  分裂路徑已改為一次寫入完整 16-bit sample pair；
-- 33.7 秒原生 WAV 仍在 **17.1 秒出現一次 0.1 秒寬頻爆音**（peak 0.56）。
-  這比先前連續爆音大幅改善，但**整首音樂尚未完全乾淨**；
-- 16-bit 音效 mixer 仍有接上，但**尚未做真人耳朵驗證**；合成滑鼠測試
-  也未實際觸發音效路徑。下面的音效／時間說明明確不算聽感驗證。
-- 計時到 0、Game Over 面板、高分更新，以及返回 Title 時寫出高分檔；
-- 高分讀回：以種子 `hiscore.dat` 寫入 42 後，Options 顯示
-  `Timetrial: 42`；
-- Title 的 Exit 先以 `CINT ($FF81)` 還原 KERNAL 文字畫面，再呼叫
-  `enter_basic`，因此模擬器會顯示 `READY.`，不會停留在 title bitmap；
-- 離開／返回各 overlay 後 bitmap 沒有殘影或錯色；
-- 獨立 [`web/`](web/) player 已用 headless Chrome 搭配官方
-  x16emu WebAssembly r49 驗證：以同一份 `hostfs/` 顯示 title 與
-  Timetrial，並包含新的計時器／按鈕場景修正。這是瀏覽器／模擬器驗證，
-  不是實機測試。
+- **滑鼠：** 使用 `-capture` 時，合成相對移動會推動遊戲指標（title
+  截圖可證）；左鍵可啟動 Timetrial；遊戲中可在 cell 間移動游標。實際
+  點擊一組有效相鄰寶石後，**分數由 0 變 15**，盤面消除並補位。這是
+  x16emu 的原生滑鼠／KERNAL 驗證，不是實機。
+- **Sprite 順序：** 用同一個 attribute 設定的測試 build 強制讓手套與
+  游標／選取框重疊，確認手套在上；slot 66 的提示框也能完整畫出綠色
+  邊框。這是原生 x16emu 測試，不是實機。
+- **音樂：** 修正兩個 out-of-range 分支後，61.7 秒原生 WAV 沒有再出現
+  `BBS`／Rockwell 警告。載入後音樂連續約 54 秒；該區間最長 zero run 為
+  **0.389 ms**、最大絕對 sample **0.291**、沒有 sample ≥ 0.999；
+  1 秒 spectral flatness 約 0.08-0.18，沒有寬頻爆音。另一個 24.3 秒的
+  正常 title→Timetrial 擷取，在載入後 11 秒音樂段也沒有斷點。先前的
+  30 秒爆音在這些擷取中沒有重現。
+- **音效：** 19.7 秒原生 WAV 直接呼叫與消除寶石相同的
+  `sound_play(SFX_MATCH1)`（音樂關閉），含 12 次 match，每次約 0.30 秒、
+  peak **0.191**、無 clipping、無被截斷的片段；另一輪音樂＋match 混合
+  在音樂開始後，沒有超過 **2 ms** 的 zero run。上面實際得分的 in-game match **沒有同一輪同步
+  錄成 WAV**；音效 WAV 是另一輪的直接路徑擷取，也不是真人聽感。
+- 原生 x16emu 已走過開機、intro、title、Timetrial、倒數、盤面互動與
+  滑鼠選取。
+- 計時器使用 12×18 `fuentelcd.ttf` 反鋸齒遮罩；原生截圖是細 LCD 筆畫，
+  沒有粗黑殘影。
+- 之前（這一輪未重跑）驗過 Game Over、高分寫入／讀回、Title Exit 回到
+  BASIC，以及 overlay 往返後的 bitmap 乾淨。
 
-`R` 重設盤面與音效時串流維持不中斷，已在原生 x16emu 走過；五個音效共用
-同一套音訊路徑。這一輪沒有把完整 126.35 秒播到 EOF；EOF 會關閉串流並
-靜音。
+這一輪沒有驗證：
 
-實機仍需驗證，特別是 16-bit PCM 音量、音樂／音效平衡、音訊時序、
-搖桿／手把對應與完整循環。本移植目前只在 **x16emu r49 與瀏覽器內的
-x16emu WebAssembly r49** 驗證，**尚未在實體 Commander X16 上測試**。
+- 完整 126.35 秒播到 EOF（最長只擷取 61.7 秒）；
+- 實機 PCM 音量、音樂／音效平衡、時序與搖桿對應；
+- 目前瀏覽器版的 runtime。`web/` 已用目前 `hostfs/` 重新建置，但這一輪
+  沒有完成新的 headless browser 互動測試。之前只到 title 與 Timetrial；
+  不要把瀏覽器滑鼠／音訊視為這一輪已驗證。
+
+這次修的兩個具體音訊 bug 是：`MACPTR` 回傳數被截掉高位（現在 X、Y
+都用），以及兩個 `beq` 被截成往回跳、執行 `FF AD 44`（`BBS7`）。
+後者就是 Rockwell 警告與舊 30 秒故障前讀取狀態損壞的來源。

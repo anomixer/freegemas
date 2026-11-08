@@ -6,20 +6,25 @@
 /* Commander X16 music: music.zcm is a 8011 Hz, mono, signed 16-bit ZCM stream
  * built from media/music.ogg by tools/build_music_zcm.py.  It is streamed from
  * hostfs with the KERNAL's MACPTR block read, so the 2 MB track never has to
- * fit in banked RAM.  The five original 8-bit PCM effects are mixed into the
+ * fit in banked RAM.  The five original 16-bit PCM effects are mixed into the
  * same FIFO (VERA has only one PCM channel); their levels and music gain leave
- * enough headroom that the 16-bit sum cannot overflow. */
+ * enough headroom that the 16-bit sum cannot overflow.
+ *
+ * Feeding rule: one VSYNC consumes 267.03 bytes of 16-bit PCM.  We feed the
+ * same amount, using the VERA audio-low IRQ flag to top the FIFO back up before
+ * it runs dry.  Waiting for the empty flag and then trying to catch up is too
+ * late: an empty FIFO has already produced an audible gap.
+ */
 #define MUSIC_FILE      9u
 #define MUSIC_RATE      21u             /* VERA rate used by music.zcm */
 #define MUSIC_HEADER    8u
 #define MUSIC_BUF       ((uint8_t *)0x0C00u)   /* 512-byte disk staging page */
-#define FEED_TARGET     26700u          /* 267 bytes per VSYNC, x100 */
-#define EFFECT_BUDGET   512u
-#define PREFILL_STEPS   8u
+#define FEED_TARGET     26703u          /* 267.03 bytes per VSYNC, x100 */
+#define FEED_MAX        510u            /* one MACPTR call, 255 samples */
+#define FEED_CHUNKS     8u              /* bounded catch-up work per frame */
+#define PREFILL_BYTES   2048u
 
 extern void pcm_copy(void);
-extern void pcm_mix(void);
-extern void pcm_mix16(void);
 extern uint16_t pcm_count;
 extern uint8_t *pcm_pointer;
 uint8_t *pcm_effect;
@@ -35,7 +40,7 @@ static uint16_t pending_count;
 static uint8_t music_last;
 
 /* Start the 16-bit FIFO with the sample clock paused.  The FIFO is filled
- * before VERA starts consuming it; a full FIFO gives about 250 ms of slack
+ * before VERA starts consuming it; the prefill gives about 128 ms of slack
  * for a slow frame and avoids the underrun "motorboat" at 8 kHz. */
 static void pcm_start16(void) {
     VERA.audio.control = 0x20;
@@ -107,43 +112,30 @@ static void mix_effect16(uint16_t n, const uint8_t *effect) {
     }
 }
 
-static void music_prefill(void);
+/* Read and enqueue one run.  Returns the number of new file bytes consumed;
+ * zero means "no progress", so a caller's loop can stop instead of spinning. */
+static uint16_t feed_once(uint16_t want) {
+    uint16_t got, total, samples, sent;
 
-static void music_frame(void) {
-    uint16_t want, got, total, samples;
-    uint16_t sent;
-    uint8_t start_ctrl;
+    if (!stream_ready || stream_at_end) return 0;
 
-    if (!stream_ready) return;
-    start_ctrl = VERA.audio.control;
-
-    /* First retry bytes that the FIFO was too full to accept last frame.
+    /* First retry bytes that the FIFO was too full to accept last call.
        Keeping them here prevents a dropped byte from shifting every later
        16-bit sample. */
     if (pending_count) {
-        if (VERA.audio.control & 0x80u) return;
+        if (VERA.audio.control & 0x80u) return 0;
         pcm_pointer = pending;
         pcm_count = pending_count;
         pcm_copy();
         sent = (uint16_t)(pending_count - pcm_count);
         pending += sent;
         pending_count = pcm_count;
-        if (pending_count) return;
+        if (pending_count) return 0;
     }
 
-    if (stream_at_end) {
-        pcm_silence();
-        stream_close();
-        return;
-    }
-
-    if (VERA.audio.control & 0x80u) return;   /* FIFO full */
-
-    feed_frac = (uint16_t)(feed_frac + FEED_TARGET);
-    want = (uint16_t)(feed_frac / 100u);
-    feed_frac = (uint16_t)(feed_frac % 100u);
-    if (start_ctrl & 0x40u) want = 510u;   /* FIFO empty: catch up (carry-safe) */
-    else if (want > 268u) want = 268u;
+    if (VERA.audio.control & 0x80u) return 0;   /* FIFO full */
+    if (!want) return 0;
+    if (want > FEED_MAX) want = FEED_MAX;
 
     if (carry_valid) MUSIC_BUF[0] = carry;
     x16_pcm_dest = MUSIC_BUF + (carry_valid ? 1u : 0u);
@@ -159,7 +151,7 @@ static void music_frame(void) {
         carry = MUSIC_BUF[total - 1u];
         carry_valid = 1;
     }
-    if (!samples) return;
+    if (!samples) return got;
 
     if (MUSIC_SETTING == 0u) {
         uint16_t i;
@@ -181,18 +173,61 @@ static void music_frame(void) {
         pending = MUSIC_BUF + (uint16_t)((samples * 2u) - pcm_count);
         pending_count = pcm_count;
     }
+    return got;
+}
+
+/* Queue exactly the bytes that elapsed VSYNCs consumed.  If a frame overran
+ * by several VSYNCs this makes several bounded reads instead of feeding just
+ * one frame and slowly starving the FIFO. */
+static void music_feed(uint16_t bytes) {
+    uint8_t guard = FEED_CHUNKS;
+    while (bytes && guard--) {
+        uint16_t chunk = bytes > FEED_MAX ? FEED_MAX : bytes;
+        uint16_t got = feed_once(chunk);
+        if (!got) break;
+        bytes = (uint16_t)(bytes - got);
+    }
+}
+
+/* Top up when VERA says the FIFO is below the audio-low threshold.  Clearing
+ * the flag before feeding means a later underrun can set it again; it is the
+ * same AFLOW-driven policy used by zsmkit's PCM player. */
+static void music_topup(void) {
+    uint8_t guard = FEED_CHUNKS;
+    while ((VERA.irq_flags & VERA_IRQ_AUDIO_LOW) && guard--) {
+        VERA.irq_flags = VERA_IRQ_AUDIO_LOW;
+        if (!feed_once(FEED_MAX)) break;
+    }
+}
+
+static void music_frame(uint8_t elapsed) {
+    uint16_t budget;
+    uint32_t acc;
+
+    if (!stream_ready) return;
+    if (elapsed > FEED_CHUNKS) elapsed = FEED_CHUNKS;
+
+    if (stream_at_end) {
+        /* Let the queued tail drain instead of chopping the last samples. */
+        if (pending_count) return;
+        if (VERA.audio.control & 0x40u) {
+            pcm_silence();
+            stream_close();
+        }
+        return;
+    }
+
+    acc = (uint32_t)feed_frac + (uint32_t)elapsed * FEED_TARGET;
+    budget = (uint16_t)(acc / 100u);
+    feed_frac = (uint16_t)(acc % 100u);
+    music_feed(budget);
+    music_topup();
 }
 
 static void music_prefill(void) {
-    uint8_t n;
     pcm_start16();
-    for (n = 0; n < PREFILL_STEPS; ++n) {
-        /* Always try one frame first: after a restart the FIFO-full flag can
-           still be stale for a few cycles after the reset, and breaking on it
-           here would start the clock with an empty FIFO. */
-        music_frame();
-        if (VERA.audio.control & 0x80u) break;
-    }
+    music_feed(PREFILL_BYTES);
+    feed_frac = 0;
     pcm_resume16();
 }
 
@@ -252,13 +287,11 @@ __attribute__((noinline)) void music_tick(void) {
             music_last = now;
             return;
         }
-        /* Keep the FIFO shallow so effects do not arrive a quarter second
-           late.  Feed at most one frame per VSYNC: a long board scan must not
-           dump several frames into the 4KB FIFO at once, because a full FIFO
-           can split a 16-bit sample pair. */
+        /* Feed the number of frames actually elapsed.  The old code fed one
+           frame whenever n was nonzero; after a long scan that left the FIFO
+           permanently behind and it eventually ran dry (the 30-second burst). */
         n = (uint8_t)(now - music_last);
-        if (!n) return;
-        music_frame();
+        music_frame(n);
         music_last = now;
         return;
     }

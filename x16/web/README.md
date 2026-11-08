@@ -4,8 +4,10 @@ A static browser player for the X16 port. It boots the real X16 KERNAL and
 `boot.prg` in the official x16-emulator WebAssembly build (r49), then loads the
 generated `x16/hostfs/` files into the emulator's in-memory drive.
 
-The page is a separate static site; the existing `wasm/` site remains the
-native C++ WebAssembly build.
+The page is a standalone static player. The repository root contains the
+four-port landing page, and the deployed copy is served at
+<https://anomixer.github.io/freegemas/x16/>; the native C++ WebAssembly player
+is the separate `wasm/` build at `/freegemas/wasm/`.
 
 ## Build
 
@@ -81,11 +83,17 @@ Select).
 
 ## Verification
 
-The page has been tested in headless Chrome against the local static server
-with x16emu WebAssembly r49: it reaches the title and Timetrial from the same
-`hostfs/` files. A synthetic pointer move did **not** move the emulator
-pointer, so mouse movement and click handling are **not yet verified** in the
-browser. This is browser/emulator testing, not real Commander X16 hardware
+Earlier headless Chrome runs against the local static server with x16emu
+WebAssembly r49 reached the title and Timetrial from the same `hostfs/` files.
+A synthetic pointer move did **not** move the emulator pointer, so mouse
+movement and click handling were **not verified** in those browser runs.
+
+After the native mouse/audio/z-order fixes, `build.ps1` was rerun and `dist/`
+now contains the current `hostfs/` (including the corrected `game`, `title`,
+PCM effects and `music.zcm`; the glove is now slot 65, in front of the cursor
+frame, and the title menu hand uses private white/black palette entries). A
+fresh interactive headless-browser run was **not**
+completed in this pass; do not treat browser mouse, layering or audio as newly
+verified. This is browser/emulator testing, not real Commander X16 hardware
 testing. The same ZCM music and PCM effect path is used in the native
-`hostfs/` build; only native x16emu and the browser emulator have been
-exercised, not real hardware.
+`hostfs/` build.

@@ -227,3 +227,6 @@ iigs/merlin32/build/*
 # WebAssembly build artifacts
 wasm/build/
 wasm/dist/
+
+# Browser landing page output
+web/_site/

@@ -4,6 +4,9 @@ English | [繁體中文](README-tw.md)
 
 This directory contains the WebAssembly (WASM) build of Freegemas, allowing the original C++ SDL2 game to run directly in modern web browsers at 60 FPS without any plugins.
 
+Live player: <https://anomixer.github.io/freegemas/wasm/>. The repository root
+is the four-port landing page at <https://anomixer.github.io/freegemas/>.
+
 ## Architecture
 
 - **Engine**: The original C++ source (`src/`, `include/`) compiled directly to WebAssembly using [Emscripten](https://emscripten.org/).
@@ -19,8 +22,9 @@ This directory contains the WebAssembly (WASM) build of Freegemas, allowing the 
 
 This repository includes a GitHub Actions workflow in [`.github/workflows/deploy-wasm.yml`](../.github/workflows/deploy-wasm.yml). Whenever changes are pushed to `master`, GitHub Actions automatically:
 1. Sets up the latest Emscripten SDK.
-2. Compiles the game and packages the assets.
-3. Deploys the result to GitHub Pages.
+2. Compiles this player and packages its assets.
+3. Builds the Commander X16 browser player and the four-port landing page.
+4. Deploys the assembled site to GitHub Pages; this player is published at `/freegemas/wasm/`.
 
 To enable GitHub Pages in your fork/repo:
 - Go to **Settings** > **Pages**.

@@ -109,6 +109,24 @@ x16_enter_basic:
         clc
         jmp $FF47
 
+; Keep the KERNAL mouse sprite 0 off the 240-line playfield.  The ROM turns
+; sprite 0 back on every mouse scan, and any write to its visibility bit is
+; undone by the next scan.  A +240 Y offset makes mouse_update_position put it
+; at y=240..479, while mouse_get still returns the real pointer position.
+; extapi $FEAB (A=3, carry clear) reads r0/r1 as X/Y offsets.  r0 = $02,
+; r1 = $04 in the LLVM-MOS zero page.
+        .global x16_mouse_offset
+x16_mouse_offset:
+        stz $02
+        stz $03
+        lda #240
+        sta $04
+        stz $05
+        lda #3
+        clc
+        jsr $FEAB
+        rts
+
 ; PCM music stream: OPEN/CHKIN/MACPTR/CLOSE on logical file 3.  The music
 ; overlay reads 267..268 bytes per VSYNC from music.zcm (after its 8-byte
 ; header) and writes 16-bit samples to the FIFO.  MACPTR is the fast KERNAL
@@ -180,7 +198,9 @@ x16_pcm_read:
 pcm_read_loop:
         lda stream_left
         ora stream_left+1
-        beq pcm_read_done
+        bne pcm_read_continue
+        jmp pcm_read_done          ; local branch: pcm_read_done is >127 bytes away
+pcm_read_continue:
         lda #$ff
         ldx stream_left+1
         bne pcm_read_chunk
@@ -192,12 +212,17 @@ pcm_read_chunk:
         clc
         jsr $FF44                ; MACPTR: A=count, X/Y=destination
         bcs pcm_read_fallback
+        ; MACPTR returns the number of bytes actually read in X (lo) and
+        ; Y (hi).  A=0 asks for up to 512 bytes, so Y is not always zero:
+        ; taking only X lost 256 bytes from every 267/510-byte run and
+        ; shifted all following 16-bit samples.
         stx pcm_read_lo
-        lda #0
-        sta pcm_read_hi
+        sty pcm_read_hi
         lda pcm_read_lo
         ora pcm_read_hi
-        beq pcm_read_done
+        bne pcm_read_got_some
+        jmp pcm_read_done          ; local branch: pcm_read_done is >127 bytes away
+pcm_read_got_some:
         ; accumulate got += returned count
         lda x16_pcm_got
         clc

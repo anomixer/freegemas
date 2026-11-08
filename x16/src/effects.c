@@ -1,6 +1,6 @@
 /* Sprite-only overlays: never erase/repaint the bitmap or a stationary gem.
- * Slot 64 mouse hand, 65 hint, 66/67 cursor/selection;
- * 68..87 digits, 88..119 particles.
+ * Gems 1..64, 65 mouse hand, 66 hint, 67/68 cursor/selection; 69..88 digits,
+ * 89..120 particles.  Slot 0 is reserved by the KERNAL mouse.
  * Pristine Game Over panel ends at $18F7F; HUD begins at $1F100. */
 #include <stdint.h>
 #include "apple2e.h"
@@ -14,8 +14,8 @@
 #define HINT_VRAM   0x1CC40u
 #define FLOATS 4
 #define SPARKS 32
-#define FLOAT_FIRST 68u
-#define SPARK_FIRST 88u
+#define FLOAT_FIRST 69u
+#define SPARK_FIRST 89u
 static uint8_t hint_age;
 static uint8_t float_next, spark_next;
 /* Particle/float state lives in the fixed-RAM page at $0F00, next to the
@@ -49,7 +49,7 @@ void effects_clear(void){
     uint8_t n;
     for(n=0;n<FLOATS;n++)age[n]=0;
     for(n=0;n<SPARKS;n++)spark_age[n]=0;
-    for(n=65;n<120;n++)hide(n);
+    for(n=65;n<121;n++)hide(n);
     hint_age=0;
     float_next=spark_next=0;
 }

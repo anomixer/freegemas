@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#080b18">
+<meta name="description" content="Play Freegemas in your browser: native WebAssembly, Commander X16, Apple //e with VERA, and Apple IIgs ports.">
+<link rel="icon" href="assets/gems/gemRed.png" type="image/png">
+<title>Freegemas — play in your browser</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #080b18;
+    --panel: #111629;
+    --panel-2: #151c33;
+    --line: #283250;
+    --ink: #eef0ff;
+    --muted: #9da7c4;
+    --pink: #ff5bbd;
+    --cyan: #5be7ff;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.55 "Segoe UI", Inter, system-ui, sans-serif;
+  }
+
+  body {
+    min-height: 100vh;
+    background:
+      radial-gradient(900px 520px at 50% -12%, rgba(96, 54, 190, .48), transparent 68%),
+      radial-gradient(700px 440px at 8% 18%, rgba(20, 126, 174, .24), transparent 70%),
+      radial-gradient(620px 420px at 94% 80%, rgba(190, 35, 126, .16), transparent 72%),
+      var(--bg);
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: .35;
+    background-image:
+      linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: linear-gradient(to bottom, rgba(0,0,0,.7), transparent 72%);
+    -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,.7), transparent 72%);
+  }
+
+  .page {
+    position: relative;
+    width: min(1040px, calc(100% - 40px));
+    margin: 0 auto;
+    padding: 56px 0 28px;
+  }
+
+  .gem-rail {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 26px;
+    min-height: 46px;
+  }
+
+  .gem-rail img {
+    width: 34px;
+    height: 34px;
+    object-fit: contain;
+    filter: drop-shadow(0 5px 8px rgba(0,0,0,.45));
+    animation: bob 3.8s ease-in-out infinite;
+  }
+
+  .gem-rail img:nth-child(2) { animation-delay: -.32s; }
+  .gem-rail img:nth-child(3) { animation-delay: -.64s; }
+  .gem-rail img:nth-child(4) { animation-delay: -.96s; }
+  .gem-rail img:nth-child(5) { animation-delay: -1.28s; }
+  .gem-rail img:nth-child(6) { animation-delay: -1.6s; }
+  .gem-rail img:nth-child(7) { animation-delay: -1.92s; }
+
+  @keyframes bob {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-5px); }
+  }
+
+  header {
+    text-align: center;
+  }
+
+  .eyebrow {
+    margin: 0 0 14px;
+    color: var(--cyan);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+  }
+
+  h1 {
+    margin: 0;
+    line-height: 0;
+  }
+
+  h1 img {
+    display: inline-block;
+    width: min(430px, 82vw);
+    height: auto;
+    filter: drop-shadow(0 16px 26px rgba(0,0,0,.45));
+    image-rendering: auto;
+  }
+
+  .lede {
+    max-width: 680px;
+    margin: 18px auto 0;
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1.7;
+  }
+
+  .lede strong {
+    color: #d9ddff;
+    font-weight: 600;
+  }
+
+  main {
+    margin-top: 34px;
+  }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .card {
+    --accent: var(--pink);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 208px;
+    padding: 23px 24px 20px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background:
+      linear-gradient(135deg, rgba(255,255,255,.035), transparent 44%),
+      var(--panel);
+    color: inherit;
+    text-decoration: none;
+    transition: border-color .18s ease, transform .18s ease, background .18s ease;
+  }
+
+  .card::after {
+    content: "";
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    height: 2px;
+    border-radius: 12px 12px 0 0;
+    background: linear-gradient(90deg, var(--accent), transparent 74%);
+    opacity: .9;
+  }
+
+  .card:hover,
+  .card:focus-visible {
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+    background:
+      linear-gradient(135deg, rgba(255,255,255,.06), transparent 46%),
+      var(--panel-2);
+    transform: translateY(-3px);
+  }
+
+  .card:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  .card-wasm { --accent: #ff6bc7; }
+  .card-x16 { --accent: #64ddff; }
+  .card-vera { --accent: #8ee36b; }
+  .card-iigs { --accent: #ffd166; }
+
+  .tag {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--accent);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+  }
+
+  .tag .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 12px currentColor;
+  }
+
+  .card h2 {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: baseline;
+    margin: 20px 0 9px;
+    font-size: 22px;
+    line-height: 1.15;
+    letter-spacing: -.02em;
+  }
+
+  .card h2 .go {
+    color: var(--accent);
+    font-size: 25px;
+    font-weight: 400;
+    transition: transform .18s ease;
+  }
+
+  .card:hover h2 .go,
+  .card:focus-visible h2 .go {
+    transform: translateX(5px);
+  }
+
+  .card p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.65;
+  }
+
+  .stack {
+    display: block;
+    margin-top: auto;
+    padding-top: 18px;
+    color: #6d7898;
+    font: 10.5px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace;
+    letter-spacing: .03em;
+  }
+
+  .note {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 26px;
+    align-items: start;
+    margin-top: 18px;
+    padding: 22px 24px;
+    border: 1px solid rgba(255,255,255,.07);
+    border-radius: 12px;
+    background: rgba(10, 14, 28, .6);
+  }
+
+  .note h2 {
+    margin: 0 0 7px;
+    font-size: 13px;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: #c8cdea;
+  }
+
+  .note p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 12.5px;
+    line-height: 1.7;
+  }
+
+  .note a {
+    color: #b9c6ff;
+    text-underline-offset: 3px;
+  }
+
+  footer {
+    margin-top: 34px;
+    padding-top: 18px;
+    border-top: 1px solid rgba(255,255,255,.08);
+    color: #707b9a;
+    font-size: 11.5px;
+    line-height: 1.75;
+    text-align: center;
+  }
+
+  footer a {
+    color: #a9b5d9;
+    text-decoration: none;
+  }
+
+  footer a:hover,
+  footer a:focus-visible {
+    color: #fff;
+    text-decoration: underline;
+  }
+
+  .fine {
+    margin-top: 8px;
+    color: #59637f;
+  }
+
+  @media (max-width: 680px) {
+    .page { padding-top: 34px; }
+    .cards { grid-template-columns: 1fr; }
+    .note { grid-template-columns: 1fr; gap: 18px; }
+    .card { min-height: 190px; }
+    .gem-rail { gap: 5px; }
+    .gem-rail img { width: 29px; height: 29px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .gem-rail img { animation: none; }
+    .card, .card h2 .go { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="gem-rail" aria-hidden="true">
+    <img src="assets/gems/gemWhite.png" alt="" width="34" height="34">
+    <img src="assets/gems/gemRed.png" alt="" width="34" height="34">
+    <img src="assets/gems/gemPurple.png" alt="" width="34" height="34">
+    <img src="assets/gems/gemOrange.png" alt="" width="34" height="34">
+    <img src="assets/gems/gemGreen.png" alt="" width="34" height="34">
+    <img src="assets/gems/gemYellow.png" alt="" width="34" height="34">
+    <img src="assets/gems/gemBlue.png" alt="" width="34" height="34">
+  </div>
+
+  <header>
+    <p class="eyebrow">Open-source match-three · four browser ports</p>
+    <h1><img src="assets/freegemas-logo.png" alt="Freegemas" width="317" height="106"></h1>
+    <p class="lede">The original C++/SDL2 <strong>Freegemas</strong>, playable without installing anything.
+      Choose the native WebAssembly build or take the gem board for a spin on a Commander X16,
+      an Apple //e with VERA, or an Apple IIgs.</p>
+  </header>
+
+  <main>
+    <div class="cards">
+      <a class="card card-wasm" href="wasm/index.html">
+        <span class="tag"><span class="dot"></span>Native WebAssembly</span>
+        <h2>Play in your browser <span class="go" aria-hidden="true">→</span></h2>
+        <p>The native C++ game compiled with Emscripten: WebGL rendering, Web Audio, keyboard and mouse,
+          and no emulator in the middle.</p>
+        <span class="stack">src/ · SDL2 · Emscripten · WebGL · Web Audio</span>
+      </a>
+
+      <a class="card card-x16" href="x16/index.html">
+        <span class="tag"><span class="dot"></span>Commander X16</span>
+        <h2>Play in your browser <span class="go" aria-hidden="true">→</span></h2>
+        <p>The 65C02 X16 port on the official X16Community WebAssembly emulator. The same
+          <code>hostfs/</code> build used by native x16emu.</p>
+        <span class="stack">65C02 · VERA · ZCM audio · x16emu r49 WASM</span>
+      </a>
+
+      <a class="card card-vera" href="https://apple2ts.com/?slot2=vera&amp;tab=vera#https://raw.githubusercontent.com/anomixer/freegemas/master/vera/freegemas.hdv" target="_blank" rel="noopener">
+        <span class="tag"><span class="dot"></span>A2VERA · Apple //e · External</span>
+        <h2>Play in Apple2TS <span class="go" aria-hidden="true">↗</span></h2>
+        <p>The VERA port in Apple2TS, streaming the ProDOS HDV straight from this repository.
+          Requires a VERA card in slot 2 or 4.</p>
+        <span class="stack">6502 · VERA · 2 MB ProDOS HDV · Apple2TS</span>
+      </a>
+
+      <a class="card card-iigs" href="https://a2gsemu-ia.pages.dev/?lang=en&amp;game=https%3A%2F%2Fgithub.com%2Fanomixer%2Ffreegemas" target="_blank" rel="noopener">
+        <span class="tag"><span class="dot"></span>Apple IIgs · External</span>
+        <h2>Play in a2gsemu-ia <span class="go" aria-hidden="true">↗</span></h2>
+        <p>The 65816 Super Hi-Res port, booted from its 2MG disk image by a2gsemu-ia. A complete
+          round is playable; exit through the game menu.</p>
+        <span class="stack">65816 · Super Hi-Res · DOC audio · 2MG</span>
+      </a>
+    </div>
+
+    <section class="note" aria-label="Browser player notes">
+      <div>
+        <h2>All four run in a browser</h2>
+        <p>WebAssembly and X16 are served from this page. Apple2TS and a2gsemu-ia are separate
+          browser emulators; the links above start them with the matching Freegemas disk.</p>
+      </div>
+      <div>
+        <h2>Controls</h2>
+        <p>Mouse to move and select; arrows to move; Space or Enter to confirm; <code>H</code> for a hint,
+          <code>R</code> to reset, Esc for the title. X16 also accepts the keyboard joystick mapping and a gamepad.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p><a href="https://github.com/anomixer/freegemas" target="_blank" rel="noopener">Source on GitHub</a>
+      · <a href="https://github.com/anomixer/freegemas/releases" target="_blank" rel="noopener">Releases</a>
+      · <a href="https://github.com/anomixer/freegemas/blob/master/LICENSE" target="_blank" rel="noopener">License</a>
+      · <a href="https://github.com/JoseTomasTocino/freegemas" target="_blank" rel="noopener">Original Freegemas</a></p>
+    <p class="fine">“Easy Lemon” by Kevin MacLeod, licensed under CC BY 3.0. Browser players are built from this repository;
+      the WebAssembly emulator is fetched at build time and is not vendored.</p>
+  </footer>
+</div>
+</body>
+</html>

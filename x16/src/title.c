@@ -22,19 +22,19 @@ static void sprite(uint8_t slot,uint8_t gem,uint16_t x,uint16_t y,uint8_t visibl
     at(0x1FC00u+(uint32_t)slot*8u);
     VERA.data0=(uint8_t)(p>>5);VERA.data0=(uint8_t)((p>>13)|0x80u);
     VERA.data0=(uint8_t)x;VERA.data0=(uint8_t)(x>>8);VERA.data0=(uint8_t)y;VERA.data0=(uint8_t)(y>>8);
-    VERA.data0=visible?0x0Cu:0;VERA.data0=0xA0;
+    VERA.data0=visible?0x08u:0;VERA.data0=0xA0;  /* gem z2; menu pointer z3 */
 }
 static void animate_gems(void){
     uint8_t frame,g;
     for(frame=0;frame<=60;frame++){
         for(g=0;g<7;g++){
             int8_t step=(int8_t)frame-(int8_t)(g*5u);
-            if(step<0)sprite(g,g,0,0,0);
+            if(step<0)sprite((uint8_t)(g+1u),g,0,0,0);
             else{
                 uint8_t s=(uint8_t)step>30u?30u:(uint8_t)step;
                 uint32_t remain=(uint32_t)(30u-s);
                 uint16_t y=(uint16_t)(TITLE_GEM_Y+((237u-TITLE_GEM_Y)*remain*remain*remain)/27000u);
-                sprite(g,g,(uint16_t)(69u+g*26u),y,1);
+                sprite((uint8_t)(g+1u),g,(uint16_t)(69u+g*26u),y,1);
             }
         }
         waitvsync();
@@ -50,10 +50,10 @@ int main(void){
     VERA.layer0.hscroll=0;VERA.layer0.vscroll=0;
     at(0x1FA00u);for(i=0;i<sizeof(title_palette);i++)VERA.data0=title_palette[i];
     at(TITLE_GEMS_VRAM);for(i=0;i<sizeof(title_gems);i++)VERA.data0=title_gems[i];
-    for(i=0;i<128;i++)sprite((uint8_t)i,0,0,0,0);
+    for(i=1;i<128;i++)sprite((uint8_t)i,0,0,0,0);
     VERA.display.video=0x51;cache_markers();marker(selected,1);
-    /* mouse_config reserves sprite 0; configure before the gems are drawn so
-       the white gem (slot 0) is restored after it. */
+    /* mouse_config reserves sprite 0.  Gems use slots 1..7 so the ROM-owned
+       pointer sprite cannot overwrite the white gem. */
     menu_mouse_init();
     animate_gems();
     for(;;){
