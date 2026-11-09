@@ -26,6 +26,7 @@ const pageFiles = [
   ["index.html", "index.html"],
   ["app.js", "app.js"],
   ["style.css", "style.css"],
+  ["favicon.png", "favicon.png"],
   ["NOTICE.md", "NOTICE.md"],
   ["emulator-license.txt", "emulator-license.txt"],
   ["rom-license.md", "rom-license.md"],

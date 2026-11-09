@@ -21,6 +21,9 @@ emcmake cmake $scriptDir
 cmake --build . --parallel 4
 
 Copy-Item "index.html", "index.js", "index.wasm", "index.data" -Destination $distDir -Force
+if (Test-Path (Join-Path $scriptDir "favicon.png")) {
+    Copy-Item (Join-Path $scriptDir "favicon.png") -Destination $distDir -Force
+}
 
 Write-Host "=== Build Complete! Outputs in $distDir ===" -ForegroundColor Green
 Write-Host "To preview locally: python -m http.server 8080 -d $distDir" -ForegroundColor Yellow

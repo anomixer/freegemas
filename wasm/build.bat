@@ -98,6 +98,7 @@ copy /y index.js "%DIST_DIR%\" >nul
 copy /y index.wasm "%DIST_DIR%\" >nul
 copy /y index.data "%DIST_DIR%\" >nul
 if exist "%SCRIPT_DIR%logo.png" copy /y "%SCRIPT_DIR%logo.png" "%DIST_DIR%\" >nul
+if exist "%SCRIPT_DIR%favicon.png" copy /y "%SCRIPT_DIR%favicon.png" "%DIST_DIR%\" >nul
 type nul > "%DIST_DIR%\.nojekyll"
 
 echo.

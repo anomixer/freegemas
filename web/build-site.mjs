@@ -41,6 +41,10 @@ required(join(wasmDir, 'index.html'),
   'Build the native WebAssembly player first: wasm/build.sh (Linux/macOS) or wasm/build.ps1 (Windows).');
 required(join(x16Dir, 'index.html'),
   'Build the Commander X16 browser player first: node x16/web/build.mjs.');
+required(join(wasmDir, 'favicon.png'),
+  'The native WebAssembly build did not copy its favicon; rebuild with wasm/build.sh or wasm/build.ps1.');
+required(join(x16Dir, 'favicon.png'),
+  'The Commander X16 build did not copy its favicon; rebuild with node x16/web/build.mjs.');
 
 mkdirSync(outDir, { recursive: true });
 for (const name of readdirSync(outDir)) {

@@ -17,6 +17,7 @@ cmake --build . --parallel 4
 # Copy outputs to dist/
 cp index.html index.js index.wasm index.data "${DIST_DIR}/"
 [ -f "${SCRIPT_DIR}/logo.png" ] && cp "${SCRIPT_DIR}/logo.png" "${DIST_DIR}/"
+[ -f "${SCRIPT_DIR}/favicon.png" ] && cp "${SCRIPT_DIR}/favicon.png" "${DIST_DIR}/"
 touch "${DIST_DIR}/.nojekyll"
 
 echo "=== Build Complete! Outputs in ${DIST_DIR} ==="
