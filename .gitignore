@@ -36,7 +36,7 @@
 x64/
 x86/
 build/
-build-wasm/
+build*/
 bld/
 dist/
 [Bb]in/
@@ -232,3 +232,6 @@ wasm/dist/
 
 # Browser landing page output
 web/_site/
+
+# MacOS thumbnail caches
+.DS_Store

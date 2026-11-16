@@ -155,7 +155,35 @@ On macOS, Homebrew is only needed for CMake:
 brew install cmake
 ```
 
-Then use the same out-of-source CMake flow as above.
+Then build and install the app bundle:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PWD/dist"
+cmake --build build
+strip build/freegemas.app/Contents/MacOS/freegemas
+cmake --install build
+open dist/freegemas.app
+```
+
+### Building a universal app
+
+The executable has no third-party dylib dependencies. SDL3, SDL3_mixer,
+SDL3_ttf (including freetype) and JsonCpp are built as static archives from the
+submodules and linked into the binary, so `Contents/MacOS/freegemas` carries
+everything it needs and `Contents/Frameworks` stays empty. The only libraries
+it loads are Apple's own, from `/usr/lib` and `/System/Library`.
+
+Build one bundle that runs on both Apple Silicon and Intel with:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+    -DCMAKE_INSTALL_PREFIX="$PWD/dist"
+cmake --build build -j"$(sysctl -n hw.ncpu)"
+strip build/freegemas.app/Contents/MacOS/freegemas
+cmake --install build
+open dist/freegemas.app
+```
 
 The original PlayStation Vita build is also retained:
 
