@@ -12,7 +12,7 @@
 # Freegemas — four ports, one gem board
 
 Freegemas is an open-source version of the well-known **Bejeweled**, written in
-C++ with [SDL2](https://www.libsdl.org/).  The original project is
+C++ with [SDL3](https://www.libsdl.org/).  The original project is
 [JoseTomasTocino/freegemas](https://github.com/JoseTomasTocino/freegemas); this
 fork adds native WebAssembly, A2VERA (Apple //e with VERA), Commander X16 and
 Apple IIgs ports, plus browser players for all four targets.
@@ -28,7 +28,7 @@ II players use dedicated browser emulators.
 | Target | Play | What runs there |
 | --- | --- | --- |
 | **Landing page** | **[OPEN THE PLAYER SELECTOR](https://anomixer.github.io/freegemas/)** | the four cards below, with local WebAssembly and X16 players |
-| **Native WebAssembly** | **[PLAY HERE](https://anomixer.github.io/freegemas/wasm/)** | the original C++/SDL2 game compiled with Emscripten; WebGL rendering and Web Audio sound |
+| **Native WebAssembly** | **[PLAY HERE](https://anomixer.github.io/freegemas/wasm/)** | the original C++/SDL3 game compiled with Emscripten; WebGL rendering and Web Audio sound |
 | **Commander X16** | **[PLAY HERE](https://anomixer.github.io/freegemas/x16/)** | the 65C02S + VERA port under the official X16Community x16emu WebAssembly r49, booting the same `hostfs/` files as native x16emu |
 | **A2VERA (Apple //e + VERA)** | **[PLAY HERE](https://apple2ts.com/?slot2=vera&tab=vera#https://raw.githubusercontent.com/anomixer/freegemas/master/vera/freegemas.hdv)** | Apple2TS streaming [`vera/freegemas.hdv`](vera/freegemas.hdv); VERA must be in slot 2 or 4 |
 | **Apple IIgs** | **[PLAY HERE](https://a2gsemu-ia.pages.dev/?lang=en&game=https%3A%2F%2Fgithub.com%2Fanomixer%2Ffreegemas)** | a2gsemu-ia booting the IIgs 2MG release from this repository |
@@ -41,12 +41,12 @@ way to run the game without an emulator or WASM runtime.
 
 | Directory | Target | Deliverable / build |
 | --- | --- | --- |
-| [`wasm/`](wasm/) | Native C++ / WebAssembly | `wasm/dist/` — Emscripten build, published as `/freegemas/wasm/` |
+| [`platform/wasm/`](platform/wasm/) | Native C++ / WebAssembly | `build-wasm/` — Emscripten build, published as `/freegemas/wasm/` |
 | [`x16/`](x16/) | Commander X16 (65C02S + VERA) | `x16/hostfs/boot.prg`; browser build in `x16/web/dist/`, published as `/freegemas/x16/` |
 | [`vera/`](vera/) | Apple //e / IIe with a VERA card | [`vera/freegemas.hdv`](vera/freegemas.hdv) — 2 MB ProDOS image, streamed by Apple2TS |
 | [`iigs/`](iigs/) | Apple IIgs (65816, Super Hi-Res) | [`iigs/merlin32/build/freegemas.2mg`](iigs/merlin32/build/freegemas.2mg) — bootable 2MG image |
 | [`web/`](web/) | GitHub Pages landing page | assembles the four cards and copies the WASM + X16 players into `web/_site/` |
-| `src/`, `include/`, `media/` | original desktop game | the C++/SDL2 sources, headers and game assets |
+| `src/`, `include/`, `media/`, `vendor/` | original desktop game | the C++/SDL3 sources, headers and bundled dependencies |
 
 ## Browser site build
 
@@ -55,7 +55,7 @@ ports itself; build them first, then assemble the static site:
 
 ```bash
 # 1. Native WebAssembly (requires the Emscripten SDK)
-./wasm/build.sh
+./platform/wasm/build.sh
 
 # 2. Commander X16 browser player (Node.js 20+)
 node ./x16/web/build.mjs
@@ -64,8 +64,8 @@ node ./x16/web/build.mjs
 node ./web/build-site.mjs
 ```
 
-On Windows use `wasm\build.ps1` for step 1; the other commands are the same.
-The result is `web/_site/`; serve it over HTTP, for example:
+On Windows use `platform\wasm\build.ps1` for step 1; the other commands are the
+same. The result is `web/_site/`; serve it over HTTP, for example:
 
 ```bash
 python3 -m http.server 8123 --directory web/_site
@@ -131,29 +131,31 @@ newly tested on real hardware.
 
 ## Native desktop builds
 
-The original desktop game is still built from the repository root.  On
-Debian-based GNU/Linux systems:
+The original desktop game is built from the repository root. SDL3, SDL3_mixer,
+SDL3_ttf and jsoncpp are built from the bundled submodules, so only the system
+development headers they need have to be installed. On Debian-based GNU/Linux
+systems:
 
 ```bash
 sudo apt-get install git build-essential cmake \
-  libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev \
-  libsdl2-mixer-dev libjsoncpp-dev
+  zlib1g-dev libasound2-dev libxkbcommon-dev libdrm-dev libgl1-mesa-dev \
+  libgbm-dev libwayland-dev libdecor-0-dev
 
-git clone https://github.com/anomixer/freegemas.git
+git clone --recursive https://github.com/anomixer/freegemas.git
 cd freegemas
 mkdir build && cd build
 cmake ..
-make
+cmake --build .
 ./freegemas
 ```
 
-On macOS, install the dependencies with Homebrew and use the same CMake flow:
+On macOS, Homebrew is only needed for CMake:
 
 ```bash
-brew install cmake sdl2 sdl2_mixer sdl2_ttf sdl2_image gettext jsoncpp
-[[ -z "${LIBRARY_PATH}" ]] && export LIBRARY_PATH=/usr/local/lib
-export LIBRARY_PATH="$LIBRARY_PATH:$(brew --prefix)/lib"
+brew install cmake
 ```
+
+Then use the same out-of-source CMake flow as above.
 
 The original PlayStation Vita build is also retained:
 

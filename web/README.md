@@ -4,7 +4,7 @@ This directory builds the GitHub Pages landing page for Freegemas and the two
 players served from this repository:
 
 - **Native WebAssembly** — the original C++/SDL3 game compiled with Emscripten,
-  built from [`wasm/`](../wasm/).
+  built from [`platform/wasm/`](../platform/wasm/).
 - **Commander X16** — the 65C02/VERA port booted by the official X16Community
   WebAssembly emulator r49, built from [`x16/web/`](../x16/web/).
 
@@ -22,7 +22,7 @@ The landing page also links two external browser emulators:
 | `index.html` | the landing page source and card layout |
 | `assets/freegemas-logo.png` | local copy of the Freegemas logo used in the hero |
 | `assets/gems/` | the seven gem icons used in the hero strip |
-| `build-site.mjs` | assembles `_site/` from the landing page, `wasm/dist/` and `x16/web/dist/` |
+| `build-site.mjs` | assembles `_site/` from the landing page, `build-wasm/` and `x16/web/dist/` |
 | `_site/` | generated output, gitignored |
 
 ## Build
@@ -32,17 +32,18 @@ built port outputs; it does not compile them.
 
 ```powershell
 # 1. Native WebAssembly player (needs the Emscripten SDK on PATH)
-.\wasm\build.ps1
+.\platform\wasm\build.ps1
 
 # 2. Commander X16 browser player (Node 20+; downloads the pinned r49 emulator)
 node .\x16\web\build.mjs
 
-# 3. Landing site
+# 3. Landing site (reads build-wasm/ from step 1)
 node .\web\build-site.mjs
 ```
 
-On Linux/macOS, use `./wasm/build.sh` and the same `build-site.mjs` command.
-`build-site.mjs` fails with a clear error if either port has not been built.
+On Linux/macOS, use `./platform/wasm/build.sh` and the same `build-site.mjs`
+command. `build-site.mjs` fails with a clear error if either port has not been
+built.
 
 Serve the result over HTTP rather than opening it from `file://`:
 

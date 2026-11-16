@@ -9,7 +9,7 @@ on:
       - 'src/**'
       - 'include/**'
       - 'media/**'
-      - 'wasm/**'
+      - 'platform/wasm/**'
       - 'x16/**'
       - 'vera/freegemas.hdv'
       - 'web/**'
@@ -30,7 +30,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
 
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v14
@@ -42,8 +44,8 @@ jobs:
 
       - name: Build native WebAssembly player
         run: |
-          chmod +x wasm/build.sh
-          wasm/build.sh
+          chmod +x platform/wasm/build.sh
+          platform/wasm/build.sh
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

@@ -64,7 +64,7 @@ StateMainMenu::StateMainMenu(Game * p) : State(p)
     mMenuYGap = 42;
     mMenuYEnd = mMenuYStart + (int) mMenuTargets.size() * mMenuYGap;
 
-    mGame->getGameSounds()->loadResources();
+    mGame->getGameSounds()->loadResources(p);
 }
 
 void StateMainMenu::update(){
@@ -135,12 +135,12 @@ void StateMainMenu::buttonDown(SDL_Keycode button)
             break;
 
         case SDLK_DOWN:
-        case SDLK_s:
+        case SDLK_S:
             moveDown();
             break;
 
         case SDLK_UP:
-        case SDLK_w:
+        case SDLK_W:
             moveUp();
             break;
 
@@ -156,15 +156,15 @@ void StateMainMenu::controllerButtonDown(Uint8 button)
 {
     switch (button)
     {
-        case SDL_CONTROLLER_BUTTON_A:
+        case SDL_GAMEPAD_BUTTON_SOUTH:
             optionChosen();
             break;
 
-        case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
+        case SDL_GAMEPAD_BUTTON_DPAD_DOWN:
             moveDown();
             break;
 
-        case SDL_CONTROLLER_BUTTON_DPAD_UP:
+        case SDL_GAMEPAD_BUTTON_DPAD_UP:
             moveUp();
             break;
     }

@@ -61,7 +61,7 @@ StateOptions::StateOptions(Game * p) : State(p)
     mMenuYGap = 42;
     mMenuYEnd = mMenuYStart + (int) mMenuOptions.size() * mMenuYGap;
 
-    mGame->getGameSounds()->loadResources();
+    mGame->getGameSounds()->loadResources(p);
 }
 
 void StateOptions::update(){
@@ -106,12 +106,12 @@ void StateOptions::buttonDown(SDL_Keycode button)
             break;
 
         case SDLK_DOWN:
-        case SDLK_s:
+        case SDLK_S:
             moveDown();
             break;
 
         case SDLK_UP:
-        case SDLK_w:
+        case SDLK_W:
             moveUp();
             break;
 
@@ -127,15 +127,15 @@ void StateOptions::controllerButtonDown(Uint8 button)
 {
     switch (button)
     {
-        case SDL_CONTROLLER_BUTTON_A:
+        case SDL_GAMEPAD_BUTTON_SOUTH:
             optionChosen();
             break;
 
-        case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
+        case SDL_GAMEPAD_BUTTON_DPAD_DOWN:
             moveDown();
             break;
 
-        case SDL_CONTROLLER_BUTTON_DPAD_UP:
+        case SDL_GAMEPAD_BUTTON_DPAD_UP:
             moveUp();
             break;
     }
@@ -210,7 +210,7 @@ void StateOptions::optionChosen()
             mOptions.setMusicEnabled(!mOptions.getMusicEnabled());
         } else if (option == "setSound") {
             mOptions.setSoundEnabled(!mOptions.getSoundEnabled());
-            mGame->getGameSounds()->loadResources();
+            mGame->getGameSounds()->loadResources(mGame);
         } else if (option == "setFullscreen") {
             mOptions.setFullscreenEnabled(!mOptions.getFullscreenEnabled());
             mGame->setFullscreen(mOptions.getFullscreenEnabled());

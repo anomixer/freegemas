@@ -3,8 +3,8 @@
 這個目錄建置 Freegemas 的 GitHub Pages 入口頁，以及由本倉庫提供的兩個
 瀏覽器版本：
 
-- **Native WebAssembly**：原始 C++/SDL2 遊戲以 Emscripten 編譯，來源在
-  [`wasm/`](../wasm/)。
+- **Native WebAssembly**：原始 C++/SDL3 遊戲以 Emscripten 編譯，來源在
+  [`platform/wasm/`](../platform/wasm/)。
 - **Commander X16**：65C02/VERA 連接埠，由官方 X16Community WebAssembly
   x16emu r49 開機，來源在 [`x16/web/`](../x16/web/)。
 
@@ -22,7 +22,7 @@
 | `index.html` | 入口頁與四張平台卡片 |
 | `assets/freegemas-logo.png` | hero 區使用的 Freegemas logo |
 | `assets/gems/` | hero 區的七顆寶石圖示 |
-| `build-site.mjs` | 把入口頁、`wasm/dist/`、`x16/web/dist/` 組成 `_site/` |
+| `build-site.mjs` | 把入口頁、`build-wasm/`、`x16/web/dist/` 組成 `_site/` |
 | `_site/` | 產出目錄，已 gitignore |
 
 ## 建置
@@ -31,7 +31,7 @@
 
 ```powershell
 # 1. Native WebAssembly（PATH 需要 Emscripten SDK）
-.\wasm\build.ps1
+.\platform\wasm\build.ps1
 
 # 2. Commander X16 瀏覽器版（需要 Node 20+；會下載固定版本的 r49 emulator）
 node .\x16\web\build.mjs
@@ -40,7 +40,7 @@ node .\x16\web\build.mjs
 node .\web\build-site.mjs
 ```
 
-Linux/macOS 請改用 `./wasm/build.sh`，再執行同一個 `build-site.mjs`。
+Linux/macOS 請改用 `./platform/wasm/build.sh`，再執行同一個 `build-site.mjs`。
 若任一連接埠尚未建置，`build-site.mjs` 會直接報錯並提示指令。
 
 請用 HTTP 伺服器預覽，不要直接開 `file://`：

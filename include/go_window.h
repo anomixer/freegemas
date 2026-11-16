@@ -1,9 +1,8 @@
 #ifndef _WINDOW_H_
 #define _WINDOW_H_
 
-#include <SDL.h>
-#include <SDL_image.h>
-#include <SDL_mixer.h>
+#include <SDL3/SDL.h>
+#include <SDL3_mixer/SDL_mixer.h>
 
 #include <string>
 
@@ -120,9 +119,12 @@ namespace GoSDL {
     private:
         friend class Image;
         friend class Font;
+        friend class Sound;
+        friend class Music;
 
         inline SDL_Renderer * getRenderer() { return mRenderer; }
-        void enqueueDraw(SDL_Texture * texture, SDL_Rect destRect, double angle, float z, Uint8 alpha, SDL_Color color);
+        inline MIX_Mixer * getMixer() { return mMixer; }
+        void enqueueDraw(SDL_Texture * texture, SDL_FRect destRect, double angle, float z, Uint8 alpha, SDL_Color color);
 
         // Called when a game controller is connected
         void openGameController(Sint32);
@@ -132,6 +134,14 @@ namespace GoSDL {
 
         // Called when closing the game
         void closeAllGameControllers();
+
+        // Process one frame (event polling + game logic + rendering)
+        void tick();
+
+#ifdef __EMSCRIPTEN__
+        // Callback used by Emscripten's requestAnimationFrame main loop
+        static void tickCallback(void * arg);
+#endif
 
         // Process game logic, drawing and rendering
         void gameLoop();
@@ -157,6 +167,9 @@ namespace GoSDL {
         /// Main renderer
         SDL_Renderer * mRenderer = NULL;
 
+        /// Mixer for playing sounds and music
+        MIX_Mixer * mMixer = NULL;
+
         /// Rendering queue
         DrawingQueue mDrawingQueue;
 
@@ -164,7 +177,7 @@ namespace GoSDL {
         OptionsManager mOptions;
 
         // List of connected game controllers
-        std::vector<SDL_GameController*> gameControllers;
+        std::vector<SDL_Gamepad*> gameControllers;
     };
 
 }

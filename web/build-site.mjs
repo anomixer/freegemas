@@ -4,7 +4,7 @@
 //   node web/build-site.mjs --out <dir> --wasm-dist <dir> --x16-dist <dir>
 //
 // This script does not compile either browser port.  Run the port builds first:
-//   wasm/build.sh          (or wasm/build.ps1 on Windows)
+//   platform/wasm/build.sh (or platform/wasm/build.ps1 on Windows)
 //   node x16/web/build.mjs
 // Then run this script; it copies the landing page and both players into a
 // single static directory suitable for GitHub Pages.
@@ -25,7 +25,7 @@ function arg(name) {
 }
 
 const outDir = resolve(here, arg('--out') ?? '_site');
-const wasmDir = resolve(here, arg('--wasm-dist') ?? join(root, 'wasm', 'dist'));
+const wasmDir = resolve(here, arg('--wasm-dist') ?? join(root, 'build-wasm'));
 const x16Dir = resolve(here, arg('--x16-dist') ?? join(root, 'x16', 'web', 'dist'));
 
 function required(file, hint) {
@@ -37,12 +37,13 @@ function required(file, hint) {
 
 required(join(here, 'index.html'), 'The landing page source is missing.');
 required(join(here, 'assets', 'freegemas-logo.png'), 'The landing-page logo is missing.');
-required(join(wasmDir, 'index.html'),
-  'Build the native WebAssembly player first: wasm/build.sh (Linux/macOS) or wasm/build.ps1 (Windows).');
+const wasmHtml = required(join(wasmDir, 'freegemas.html'),
+  'Build the native WebAssembly player first: platform/wasm/build.sh (Linux/macOS) or platform/wasm/build.ps1 (Windows).');
+for (const name of ['freegemas.js', 'freegemas.wasm', 'freegemas.data']) {
+  required(join(wasmDir, name), 'The native WebAssembly build is incomplete; rebuild it with platform/wasm/build.sh or platform/wasm/build.ps1.');
+}
 required(join(x16Dir, 'index.html'),
   'Build the Commander X16 browser player first: node x16/web/build.mjs.');
-required(join(wasmDir, 'favicon.png'),
-  'The native WebAssembly build did not copy its favicon; rebuild with wasm/build.sh or wasm/build.ps1.');
 required(join(x16Dir, 'favicon.png'),
   'The Commander X16 build did not copy its favicon; rebuild with node x16/web/build.mjs.');
 
@@ -56,8 +57,17 @@ cpSync(join(here, 'index.html'), join(outDir, 'index.html'));
 cpSync(join(here, 'assets'), join(outDir, 'assets'), { recursive: true });
 writeFileSync(join(outDir, '.nojekyll'), '');
 
-// Both browser players are self-contained directories with relative assets.
-cpSync(wasmDir, join(outDir, 'wasm'), { recursive: true });
+// The native build writes freegemas.html/.js/.wasm/.data. Publish the entry
+// point as wasm/index.html so existing landing-page links keep working.
+const wasmOut = join(outDir, 'wasm');
+mkdirSync(wasmOut, { recursive: true });
+cpSync(wasmHtml, join(wasmOut, 'index.html'));
+for (const name of ['freegemas.js', 'freegemas.wasm', 'freegemas.data']) {
+  cpSync(join(wasmDir, name), join(wasmOut, name));
+}
+if (existsSync(join(wasmDir, 'favicon.png'))) {
+  cpSync(join(wasmDir, 'favicon.png'), join(wasmOut, 'favicon.png'));
+}
 cpSync(x16Dir, join(outDir, 'x16'), { recursive: true });
 
 // A small map of the deployed pages, useful for later inspection without
@@ -76,9 +86,9 @@ function size(path) {
   return s.isDirectory() ? 0 : s.size;
 }
 
-const wasmBytes = statSync(join(outDir, 'wasm', 'index.js')).size
-  + (existsSync(join(outDir, 'wasm', 'index.wasm')) ? statSync(join(outDir, 'wasm', 'index.wasm')).size : 0)
-  + (existsSync(join(outDir, 'wasm', 'index.data')) ? statSync(join(outDir, 'wasm', 'index.data')).size : 0);
+const wasmBytes = statSync(join(wasmOut, 'freegemas.js')).size
+  + statSync(join(wasmOut, 'freegemas.wasm')).size
+  + statSync(join(wasmOut, 'freegemas.data')).size;
 const x16Index = readFileSync(join(outDir, 'x16', 'index.html'), 'utf8');
 console.log(`site: ${outDir}`);
 console.log(`players: WebAssembly (${wasmBytes} bytes) + X16 (${size(join(outDir, 'x16', 'game', 'game'))} byte game)`);

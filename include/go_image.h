@@ -1,9 +1,7 @@
 #ifndef _IMAGE_H_
 #define _IMAGE_H_
 
-#include <SDL.h>
-#include <SDL_image.h>
-
+#include <SDL3/SDL.h>
 #include <string>
 #include <memory>
 using namespace std;
@@ -47,7 +45,7 @@ namespace GoSDL {
             eventually avoided this class from being copyable,
             because whenever I returned an Image from a function by copy,
             the instance in the function internally destroyed the
-            SDL_Texture. Furthermore, SDL2 does not currently
+            SDL_Texture. Furthermore, SDL3 does not currently
             offer any easy way of duplicating a SDL_Texture, so
             using a copy constructor was not possible.
 
@@ -71,7 +69,7 @@ namespace GoSDL {
         };
 
         Window * mParentWindow = NULL;
-        int mWidth, mHeight;
+        float mWidth, mHeight;
 
         string mPath;
     };

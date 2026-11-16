@@ -5,38 +5,51 @@
 #include <iostream>
 #include <stdexcept>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 using namespace std;
 
 
 GoSDL::Window::Window (unsigned width, unsigned height, std::string caption, Uint32 updateInterval) :
     mUpdateInterval(updateInterval)
 {
+#ifdef __EMSCRIPTEN__
+    // Use the canvas from platform/wasm/shell.html for rendering and keyboard input.
+    SDL_SetHint(SDL_HINT_EMSCRIPTEN_CANVAS_SELECTOR, "#canvas");
+    SDL_SetHint(SDL_HINT_EMSCRIPTEN_KEYBOARD_ELEMENT, "#canvas");
+#endif
+
     // Init SDL
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) < 0)
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD))
     {
         throw std::runtime_error(SDL_GetError());
     }
 
-    // Set texture filtering to linear
-    if (!SDL_SetHint( SDL_HINT_RENDER_SCALE_QUALITY, "1" ) )
+    if( !MIX_Init())
     {
-        cerr << "Warning: Linear texture filtering not enabled!" << endl;
+        throw std::runtime_error(SDL_GetError());
     }
 
-    if( Mix_OpenAudio( MIX_DEFAULT_FREQUENCY, MIX_DEFAULT_FORMAT, MIX_DEFAULT_CHANNELS, 4096 ) < 0 )
-    {
-        throw std::runtime_error(Mix_GetError());
+    mMixer = MIX_CreateMixerDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, NULL);
+    if (!this->mMixer) {
+        throw std::runtime_error(SDL_GetError());
     }
 
     // Create window
-    mWindow = SDL_CreateWindow( caption.c_str(),
-                                SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-                                #ifdef __vita__
-                                    960, 544,
-                                #else
-                                    width, height,
-                                #endif
-                                SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI );
+    SDL_PropertiesID properties = SDL_CreateProperties();
+    SDL_SetStringProperty(properties, SDL_PROP_WINDOW_CREATE_TITLE_STRING, caption.c_str());
+#ifdef __vita__
+    SDL_SetNumberProperty(properties, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, 960);
+    SDL_SetNumberProperty(properties, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, 544);
+#else
+    SDL_SetNumberProperty(properties, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, width);
+    SDL_SetNumberProperty(properties, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, height);
+#endif
+    SDL_SetNumberProperty(properties, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+    mWindow =  SDL_CreateWindowWithProperties(properties);
+    SDL_DestroyProperties(properties);
 
     // If window could not be created, throw an error
     if (mWindow == NULL )
@@ -45,7 +58,7 @@ GoSDL::Window::Window (unsigned width, unsigned height, std::string caption, Uin
     }
 
     // Create renderer for the window
-    mRenderer = SDL_CreateRenderer( mWindow, -1, 0 );
+    mRenderer = SDL_CreateRenderer( mWindow,0 );
 
     // If rendered could not be created, throw an error
     if (mRenderer == NULL )
@@ -54,25 +67,25 @@ GoSDL::Window::Window (unsigned width, unsigned height, std::string caption, Uin
     }
 
     // For proper scaling in all resolutions
-    SDL_RenderSetLogicalSize(mRenderer, width, height);
+#ifdef __EMSCRIPTEN__
+    // The browser shell can make the canvas fill the whole viewport in
+    // fullscreen. Stretching the logical presentation here keeps the game
+    // content filling that canvas instead of leaving SDL's 4:3 letterbox bars
+    // inside it.
+    SDL_SetRenderLogicalPresentation(mRenderer, width, height, SDL_LOGICAL_PRESENTATION_STRETCH);
+#else
+    SDL_SetRenderLogicalPresentation(mRenderer, width, height, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+#endif
 
     // Initialize renderer color
     SDL_SetRenderDrawColor( mRenderer, 0, 0, 0, 255 );
-
-    // Initialize PNG loading
-    int imgFlags = IMG_INIT_PNG;
-
-    if( !( IMG_Init( imgFlags ) & imgFlags ) )
-    {
-        throw std::runtime_error(IMG_GetError() );
-    }
 
     // Set full screen mode
     mOptions.loadResources();
     setFullscreen(mOptions.getFullscreenEnabled());
 
     // Hide cursor
-    SDL_ShowCursor(0);
+    SDL_HideCursor();
 }
 
 GoSDL::Window::~Window()
@@ -85,103 +98,8 @@ GoSDL::Window::~Window()
 	mWindow = NULL;
 
 	// Quit SDL subsystems
-	Mix_Quit();
-    IMG_Quit();
+	MIX_Quit();
 	SDL_Quit();
-}
-
-#ifdef __EMSCRIPTEN__
-#include <emscripten.h>
-
-static void emscriptenMainLoop(void *arg)
-{
-    auto *win = static_cast<GoSDL::Window *>(arg);
-    win->doFrame();
-}
-#endif
-
-void GoSDL::Window::doFrame()
-{
-    SDL_Event e;
-    while (SDL_PollEvent(&e))
-    {
-        switch (e.type)
-        {
-        case SDL_APP_WILLENTERBACKGROUND:
-            mApplicationActive = false;
-            break;
-
-        case SDL_APP_WILLENTERFOREGROUND:
-            mApplicationActive = true;
-            break;
-
-        case SDL_QUIT:
-            mShouldRun = false;
-#ifdef __EMSCRIPTEN__
-            emscripten_cancel_main_loop();
-#endif
-            return;
-
-        case SDL_KEYDOWN:
-            mMouseActive = false;
-            buttonDown(e.key.keysym.sym);
-            break;
-
-        case SDL_KEYUP:
-            buttonUp(e.key.keysym.sym);
-            break;
-
-        case SDL_MOUSEMOTION:
-            mMouseActive = true;
-            mMouseX = e.motion.x;
-            mMouseY = e.motion.y;
-            break;
-
-        case SDL_MOUSEBUTTONDOWN:
-            mMouseActive = true;
-            mouseButtonDown(e.button.button);
-            break;
-
-        case SDL_MOUSEBUTTONUP:
-            mouseButtonUp(e.button.button);
-            break;
-
-        case SDL_CONTROLLERBUTTONDOWN:
-            mMouseActive = false;
-            controllerButtonDown(e.cbutton.button);
-            break;
-
-        case SDL_CONTROLLERDEVICEADDED:
-            openGameController(e.cdevice.which);
-            break;
-
-        case SDL_CONTROLLERDEVICEREMOVED:
-            closeDisconnectedGameControllers();
-            break;
-        }
-    }
-
-    if (mApplicationActive)
-    {
-        Uint32 gameCycleTicks = SDL_GetTicks();
-
-        gameLoop();
-
-#ifndef __EMSCRIPTEN__
-        // Limit to framerate (browser handles this via requestAnimationFrame in WebAssembly)
-        gameCycleTicks = SDL_GetTicks() - gameCycleTicks;
-        if (gameCycleTicks < mUpdateInterval)
-        {
-            SDL_Delay(mUpdateInterval - gameCycleTicks);
-        }
-#endif
-    }
-    else
-    {
-#ifndef __EMSCRIPTEN__
-        SDL_WaitEvent(nullptr);
-#endif
-    }
 }
 
 void GoSDL::Window::show()
@@ -193,12 +111,118 @@ void GoSDL::Window::show()
     mApplicationActive = true;
 
 #ifdef __EMSCRIPTEN__
-    emscripten_set_main_loop_arg(emscriptenMainLoop, this, 0, 1);
+    // Browsers cannot block forever in a native while loop. Let Emscripten
+    // drive the game at approximately the native frame rate; the third
+    // argument (true) keeps the C++ stack alive so Window/Game are not
+    // destroyed when show() unwinds.
+    emscripten_set_main_loop_arg(&GoSDL::Window::tickCallback, this, 60, true);
 #else
     // Main game loop
-    while (mShouldRun)
+    while (mShouldRun) {
+        tick();
+    }
+#endif
+}
+
+#ifdef __EMSCRIPTEN__
+void GoSDL::Window::tickCallback(void * arg)
+{
+    static_cast<GoSDL::Window*>(arg)->tick();
+}
+#endif
+
+void GoSDL::Window::tick()
+{
+    // To poll events
+    SDL_Event e;
+
+    // Event loop
+    while (SDL_PollEvent (&e))
     {
-        doFrame();
+        switch (e.type)
+        {
+        case SDL_EVENT_WILL_ENTER_BACKGROUND:
+            mApplicationActive = false;
+            break;
+
+        case SDL_EVENT_WILL_ENTER_FOREGROUND:
+            mApplicationActive = true;
+            break;
+
+        case SDL_EVENT_QUIT:
+            close();
+            break;
+
+        case SDL_EVENT_KEY_DOWN:
+            mMouseActive = false;
+            buttonDown(e.key.key);
+            break;
+
+        case SDL_EVENT_KEY_UP:
+            buttonUp(e.key.key);
+            break;
+
+        case SDL_EVENT_MOUSE_MOTION:
+            mMouseActive = true;
+            SDL_ConvertEventToRenderCoordinates(mRenderer, &e);
+            mMouseX = e.motion.x;
+            mMouseY = e.motion.y;
+            break;
+
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+            mMouseActive = true;
+            mouseButtonDown(e.button.button);
+            break;
+
+        case SDL_EVENT_MOUSE_BUTTON_UP:
+            mouseButtonUp(e.button.button);
+            break;
+
+        case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+            mMouseActive = false;
+            controllerButtonDown(e.gbutton.button);
+            break;
+
+        case SDL_EVENT_GAMEPAD_ADDED:
+            openGameController(e.gbutton.which);
+            break;
+
+        case SDL_EVENT_GAMEPAD_REMOVED:
+            closeDisconnectedGameControllers();
+            break;
+        }
+    }
+
+    if (!mShouldRun)
+    {
+#ifdef __EMSCRIPTEN__
+        emscripten_cancel_main_loop();
+#endif
+        return;
+    }
+
+    if (mApplicationActive)
+    {
+#ifndef __EMSCRIPTEN__
+        Uint32 gameCycleTicks = SDL_GetTicks();
+#endif
+
+        gameLoop();
+
+#ifndef __EMSCRIPTEN__
+        // Limit to framerate. In the browser the requestAnimationFrame
+        // callback already supplies the frame pacing.
+        gameCycleTicks = SDL_GetTicks() - gameCycleTicks;
+        if (gameCycleTicks < mUpdateInterval)
+        {
+            SDL_Delay(mUpdateInterval - gameCycleTicks);
+        }
+#endif
+    }
+#ifndef __EMSCRIPTEN__
+    else
+    {
+        SDL_WaitEvent(nullptr);
     }
 #endif
 }
@@ -231,7 +255,7 @@ void GoSDL::Window::gameLoop()
         SDL_SetTextureColorMod(op->mTexture, op->mColor.r, op->mColor.g, op->mColor.b);
 
         // Draw the texture
-        int res = SDL_RenderCopyEx(this->mRenderer,
+        int res = SDL_RenderTextureRotated(this->mRenderer,
                         op->mTexture,
                         NULL,
                         &(op->mDstRect),
@@ -240,7 +264,7 @@ void GoSDL::Window::gameLoop()
                         SDL_FLIP_NONE);
 
         // Check for errors when drawing
-        if (res != 0)
+        if (!res)
         {
             printf("ERROR %s \n", SDL_GetError());
         }
@@ -255,18 +279,20 @@ void GoSDL::Window::gameLoop()
 
 void GoSDL::Window::close()
 {
-#ifdef __EMSCRIPTEN__
-    EM_ASM({
-        if (window.confirmExitGame) {
-            window.confirmExitGame();
-        }
-    });
-#else
     mShouldRun = false;
+
+#ifdef __EMSCRIPTEN__
+    // Let the web shell replace the frozen game canvas with a friendly
+    // "closed" screen instead of leaving the last frame on the page.
+    EM_ASM({
+        if (window.freegemasQuit) {
+            window.freegemasQuit();
+        }
+    }, 0);
 #endif
 }
 
-void GoSDL::Window::enqueueDraw(SDL_Texture * texture, SDL_Rect destRect, double angle, float z, Uint8 alpha, SDL_Color color)
+void GoSDL::Window::enqueueDraw(SDL_Texture * texture, SDL_FRect destRect, double angle, float z, Uint8 alpha, SDL_Color color)
 {
     // Create the new drawing operation
     GoSDL::DrawingQueueOperation op;
@@ -283,19 +309,19 @@ void GoSDL::Window::enqueueDraw(SDL_Texture * texture, SDL_Rect destRect, double
 }
 
 void GoSDL::Window::openGameController(Sint32 index) {
-     if (SDL_IsGameController(index)) {
-        SDL_GameController * controller = SDL_GameControllerOpen(index);
-        lDEBUG << "Adding controller: " << SDL_GameControllerName(controller);
+     if (SDL_IsGamepad(index)) {
+        SDL_Gamepad * controller = SDL_OpenGamepad(index);
+        lDEBUG << "Adding controller: " << SDL_GetGamepadName(controller);
         gameControllers.push_back(controller);
     }
 }
 
 void GoSDL::Window::closeDisconnectedGameControllers() {
-    std::vector<SDL_GameController*> currentControllers;
+    std::vector<SDL_Gamepad*> currentControllers;
     for (int i = 0; i < int(gameControllers.size()); i++) {
-        if (!SDL_GameControllerGetAttached(gameControllers[i])) {
-            lDEBUG << "Removing controller: " << SDL_GameControllerName(gameControllers[i]);
-            SDL_GameControllerClose(gameControllers[i]);
+        if (!SDL_GamepadConnected(gameControllers[i])) {
+            lDEBUG << "Removing controller: " << SDL_GetGamepadName(gameControllers[i]);
+            SDL_CloseGamepad(gameControllers[i]);
             gameControllers[i] = NULL;
         } else {
             currentControllers.push_back(gameControllers[i]);
@@ -307,33 +333,17 @@ void GoSDL::Window::closeDisconnectedGameControllers() {
 
 void GoSDL::Window::closeAllGameControllers() {
     for (int i = 0; i < int(gameControllers.size()); i++) {
-        lDEBUG << "Removing controller: " << SDL_GameControllerName(gameControllers[i]);
-        SDL_GameControllerClose(gameControllers[i]);
+        lDEBUG << "Removing controller: " << SDL_GetGamepadName(gameControllers[i]);
+        SDL_CloseGamepad(gameControllers[i]);
         gameControllers[i] = NULL;
     }
 }
 
 void GoSDL::Window::setFullscreen(bool value)
 {
-#ifdef __EMSCRIPTEN__
-    if (value) {
-        EM_ASM({
-            if (window.setBrowserFullscreen) {
-                window.setBrowserFullscreen(true);
-            }
-        });
-    } else {
-        EM_ASM({
-            if (window.setBrowserFullscreen) {
-                window.setBrowserFullscreen(false);
-            }
-        });
-    }
-#else
     if (value) {
         SDL_SetWindowFullscreen(mWindow, SDL_WINDOW_FULLSCREEN);
     } else {
         SDL_SetWindowFullscreen(mWindow, 0);
     }
-#endif
 }

@@ -7,7 +7,7 @@ generated `x16/hostfs/` files into the emulator's in-memory drive.
 The page is a standalone static player. The repository root contains the
 four-port landing page, and the deployed copy is served at
 <https://anomixer.github.io/freegemas/x16/>; the native C++ WebAssembly player
-is the separate `wasm/` build at `/freegemas/wasm/`.
+is the separate `platform/wasm/` build at `/freegemas/wasm/`.
 
 ## Build
 

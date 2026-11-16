@@ -12,25 +12,31 @@ jobs:
       - name: install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget cmake g++ libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev libsdl2-mixer-dev libjsoncpp-dev libfuse2
+          sudo apt-get install --no-install-recommends git ca-certificates g++ make cmake zlib1g-dev libasound-dev libxkbcommon-dev libdrm-dev libgl1-mesa-dev libgbm-dev libwayland-dev libdecor-0-dev
       - name: checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - name: build
         run: |
-          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr .
-          make
+          mkdir build && cd build
+          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DSDL_X11=OFF ..
+          cmake --build .
           strip --strip-unneeded freegemas
           make install DESTDIR=AppDir
           wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           chmod +x linuxdeploy*.AppImage
           ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
+          cp Freegemas*.AppImage ../
+          cd ..
       - name: publish artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: freegemas-linux
           path: |
             Freegemas*.AppImage
             LICENSE
+            THIRD-PARTY-LICENSES.md
             README.md
 
   Windows:
@@ -50,55 +56,89 @@ jobs:
             mingw-w64-x86_64-binutils
             mingw-w64-x86_64-make
             mingw-w64-x86_64-cmake
-            mingw-w64-x86_64-pkgconf
-            mingw-w64-x86_64-SDL2
-            mingw-w64-x86_64-SDL2_image
-            mingw-w64-x86_64-SDL2_mixer
-            mingw-w64-x86_64-SDL2_ttf
-            mingw-w64-x86_64-jsoncpp
           update: true
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - name: Build
         run: |
-          cmake -DCMAKE_BUILD_TYPE=Release -G "MinGW Makefiles" .
+          mkdir build && cd build
+          cmake -DCMAKE_BUILD_TYPE=Release -G "MinGW Makefiles" ..
           cmake --build .
           strip --strip-unneeded freegemas.exe
+          cp freegemas.exe ../
+          cd ..
       - name: Publish artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: freegemas-windows
           path: |
             freegemas.exe
             media
             LICENSE
+            THIRD-PARTY-LICENSES.md
             README.md
 
   MacOS:
-    runs-on: macos-latest
+    runs-on: macos-15
 
     steps:
-      - name: install dependencies
-        run: |
-          brew install sdl2 sdl2_mixer sdl2_ttf sdl2_image jsoncpp
       - name: checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - name: build
         run: |
-          export CPATH=$(brew --prefix)/include
-          export LIBRARY_PATH=$(brew --prefix)/lib
-          cmake -DCMAKE_BUILD_TYPE=Release .
-          make
-          strip freegemas
+          # The bundle is ad-hoc signed by the install step, so this artifact is
+          # for inspection and local runs only. Gatekeeper rejects it once it is
+          # quarantined on a machine other than the runner that built it;
+          # shipping to users needs Developer ID signing and notarization.
+          mkdir build && cd build
+          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/dist" ..
+          cmake --build .
+          strip freegemas.app/Contents/MacOS/freegemas
+          cmake --install .
+          cd ..
+          echo "MACOS_ARCH=$(uname -m)" >> "$GITHUB_ENV"
+      - name: package
+        run: |
+          # upload-artifact uses the least common ancestor of the listed paths as
+          # the artifact root. Uploading dist/freegemas.app alongside LICENSE and
+          # README.md therefore makes the workspace the root and leaves a stray
+          # dist/ wrapper in every download. Staging the files side by side keeps
+          # the extracted archive flat: freegemas.app, LICENSE, README.md.
+          mkdir -p ${{ env.MACOS_ARCH }}
+          cp -R dist/freegemas.app ${{ env.MACOS_ARCH }}/
+          cp LICENSE THIRD-PARTY-LICENSES.md README.md ${{ env.MACOS_ARCH }}/
       - name: publish artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: freegemas-macos
-          path: |
-            freegemas
-            media
-            LICENSE
-            README.md
+          name: freegemas-macos-${{ env.MACOS_ARCH }}
+          path: ${{ env.MACOS_ARCH }}/
+          if-no-files-found: error
+
+  Emscripten:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Install Emscripten
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y emscripten
+      - name: Build WebAssembly
+        run: |
+          export EMSCRIPTEN_ROOT_PATH="$(em-config EMSCRIPTEN_ROOT)"
+          echo "EMSCRIPTEN_ROOT_PATH=$EMSCRIPTEN_ROOT_PATH" >> "$GITHUB_ENV"
+          emcmake cmake -S . -B build-wasm -DCMAKE_BUILD_TYPE=Release -DEMSCRIPTEN_ROOT_PATH="$EMSCRIPTEN_ROOT_PATH"
+          cmake --build build-wasm --parallel
+          test -s build-wasm/freegemas.html
+          test -s build-wasm/freegemas.wasm
+          test -s build-wasm/freegemas.data
 
   Vita:
     runs-on: ubuntu-latest
@@ -106,22 +146,25 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-      - name: Install dependencies
-        run: |
-          yes | vdpm sdl2
-          vdpm install taihen SceShaccCgExt || vdpm taihen SceShaccCgExt || true
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
       - name: Build
         run: |
-          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="${VITASDK}/share/vita.toolchain.cmake" .
-          make
+          mkdir build && cd build
+          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="${VITASDK}/share/vita.toolchain.cmake" ..
+          cmake --build .
+          cp freegemas.vpk ../
+          cd ..
       - name: Publish artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: freegemas-vita
           path: |
             freegemas.vpk
             LICENSE
+            THIRD-PARTY-LICENSES.md
             README.md
 
   Release:
@@ -135,14 +178,20 @@ jobs:
     - name: Extract tag name
       id: tag
       run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
-    - uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v7
     - name: Zip artifacts
       run: |
-        zip -r freegemas-${{matrix.build}}.zip freegemas-${{matrix.build}}
+        if [ "${{ matrix.build }}" = "macos" ]; then
+          for artifact in freegemas-macos-*; do
+            [ -d "$artifact" ] && zip -r "${artifact}.zip" "$artifact"
+          done
+        else
+          zip -r freegemas-${{matrix.build}}.zip freegemas-${{matrix.build}}
+        fi
     - name: Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v3
       with:
-        files: freegemas-${{matrix.build}}.zip
+        files: freegemas-${{matrix.build}}*.zip
         tag_name: ${{ steps.tag.outputs.VERSION }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

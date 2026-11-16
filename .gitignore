@@ -36,7 +36,9 @@
 x64/
 x86/
 build/
+build-wasm/
 bld/
+dist/
 [Bb]in/
 [Oo]bj/
 
