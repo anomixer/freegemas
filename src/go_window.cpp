@@ -16,7 +16,7 @@ GoSDL::Window::Window (unsigned width, unsigned height, std::string caption, Uin
     mUpdateInterval(updateInterval)
 {
 #ifdef __EMSCRIPTEN__
-    // Use the canvas from wasm/shell.html for rendering and keyboard input.
+    // Use the canvas from platform/wasm/shell.html for rendering and keyboard input.
     SDL_SetHint(SDL_HINT_EMSCRIPTEN_CANVAS_SELECTOR, "#canvas");
     SDL_SetHint(SDL_HINT_EMSCRIPTEN_KEYBOARD_ELEMENT, "#canvas");
 #endif

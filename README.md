@@ -1,198 +1,210 @@
 <p align="center">
-    <img src="https://raw.githubusercontent.com/JoseTomasTocino/freegemas/static/images/header_logo.png"><br>
-    <img src="https://raw.githubusercontent.com/JoseTomasTocino/freegemas/static/images/header_gems.png"><br>
+  <img src="web/assets/freegemas-logo.png" width="317" alt="Freegemas"><br>
+  <img src="web/assets/gems/gemWhite.png" width="28" alt="">
+  <img src="web/assets/gems/gemRed.png" width="28" alt="">
+  <img src="web/assets/gems/gemPurple.png" width="28" alt="">
+  <img src="web/assets/gems/gemOrange.png" width="28" alt="">
+  <img src="web/assets/gems/gemGreen.png" width="28" alt="">
+  <img src="web/assets/gems/gemYellow.png" width="28" alt="">
+  <img src="web/assets/gems/gemBlue.png" width="28" alt="">
 </p>
 
-__Freegemas__ is an open source version of the well known Bejeweled, for GNU/Linux, Windows, Mac and Playstation Vita. It's written in C++ using [SDL3](https://www.libsdl.org/). In the past it used Gosu instead of SDL3, and the old repository can be found at [Google Code](https://code.google.com/archive/p/freegemas/).
+# Freegemas — four ports, one gem board
 
-<p align="center">
-    <img src="https://raw.githubusercontent.com/JoseTomasTocino/freegemas/static/images/screenshot_1.png">
-</p>    
-        
+Freegemas is an open-source version of the well-known **Bejeweled**, written in
+C++ with [SDL3](https://www.libsdl.org/).  The original project is
+[JoseTomasTocino/freegemas](https://github.com/JoseTomasTocino/freegemas); this
+fork adds native WebAssembly, A2VERA (Apple //e with VERA), Commander X16 and
+Apple IIgs ports, plus browser players for all four targets.
 
+**Play in a browser:** <https://anomixer.github.io/freegemas/>
 
-## Installation on Debian-based GNU/Linux systems
+## Play in your browser
 
-SDL3 and its satellite libraries are built from the bundled submodules, so only
-the system development headers they need have to be installed:
+Every target has a browser player.  The native WebAssembly and X16 players are
+built from this repository and served from its GitHub Pages site; the two Apple
+II players use dedicated browser emulators.
 
-    sudo apt-get install git build-essential cmake \
-        zlib1g-dev libasound2-dev libxkbcommon-dev libdrm-dev libgl1-mesa-dev \
-        libgbm-dev libwayland-dev libdecor-0-dev
+| Target | Play | What runs there |
+| --- | --- | --- |
+| **Landing page** | **[OPEN THE PLAYER SELECTOR](https://anomixer.github.io/freegemas/)** | the four cards below, with local WebAssembly and X16 players |
+| **Native WebAssembly** | **[PLAY HERE](https://anomixer.github.io/freegemas/wasm/)** | the original C++/SDL3 game compiled with Emscripten; WebGL rendering and Web Audio sound |
+| **Commander X16** | **[PLAY HERE](https://anomixer.github.io/freegemas/x16/)** | the 65C02S + VERA port under the official X16Community x16emu WebAssembly r49, booting the same `hostfs/` files as native x16emu |
+| **A2VERA (Apple //e + VERA)** | **[PLAY HERE](https://apple2ts.com/?slot2=vera&tab=vera#https://raw.githubusercontent.com/anomixer/freegemas/master/vera/freegemas.hdv)** | Apple2TS streaming [`vera/freegemas.hdv`](vera/freegemas.hdv); VERA must be in slot 2 or 4 |
+| **Apple IIgs** | **[PLAY HERE](https://a2gsemu-ia.pages.dev/?lang=en&game=https%3A%2F%2Fgithub.com%2Fanomixer%2Ffreegemas)** | a2gsemu-ia booting the IIgs 2MG release from this repository |
 
-After that, clone the repo:
+The four ports share the same board, gem art, menu flow and rules.  Browser
+audio needs a click before it can start; the native desktop build is still the
+way to run the game without an emulator or WASM runtime.
 
-    git clone --recursive https://github.com/JoseTomasTocino/freegemas.git
-    
-Do an out-of-source compilation and run the program:
+## Ports at a glance
 
-    cd freegemas
-    mkdir build
-    cd build
-    cmake ..
-    cmake --build .
-    ./freegemas
+| Directory | Target | Deliverable / build |
+| --- | --- | --- |
+| [`platform/wasm/`](platform/wasm/) | Native C++ / WebAssembly | `build-wasm/` — Emscripten build, published as `/freegemas/wasm/` |
+| [`x16/`](x16/) | Commander X16 (65C02S + VERA) | `x16/hostfs/boot.prg`; browser build in `x16/web/dist/`, published as `/freegemas/x16/` |
+| [`vera/`](vera/) | Apple //e / IIe with a VERA card | [`vera/freegemas.hdv`](vera/freegemas.hdv) — 2 MB ProDOS image, streamed by Apple2TS |
+| [`iigs/`](iigs/) | Apple IIgs (65816, Super Hi-Res) | [`iigs/merlin32/build/freegemas.2mg`](iigs/merlin32/build/freegemas.2mg) — bootable 2MG image |
+| [`web/`](web/) | GitHub Pages landing page | assembles the four cards and copies the WASM + X16 players into `web/_site/` |
+| `src/`, `include/`, `media/`, `vendor/` | original desktop game | the C++/SDL3 sources, headers and bundled dependencies |
 
-## Installation on OS X
+## Browser site build
 
-This assumes that you are already using [Homebrew](https://brew.sh/). SDL3,
-SDL3_mixer, SDL3_ttf and JsonCpp are built from the bundled submodules, so
-Homebrew is only needed for CMake:
+The landing page is maintained in [`web/`](web/).  It does not compile the
+ports itself; build them first, then assemble the static site:
 
-    brew install cmake
+```bash
+# 1. Native WebAssembly (requires the Emscripten SDK)
+./platform/wasm/build.sh
 
-After that, clone the repo:
+# 2. Commander X16 browser player (Node.js 20+)
+node ./x16/web/build.mjs
 
-    git clone --recursive https://github.com/JoseTomasTocino/freegemas.git
-    
-Do an out-of-source compilation, install the app bundle and run it:
+# 3. Landing page and both players
+node ./web/build-site.mjs
+```
 
-    cd freegemas
-    cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PWD/dist"
-    cmake --build build
-    strip build/freegemas.app/Contents/MacOS/freegemas
-    cmake --install build
-    open dist/freegemas.app
+On Windows use `platform\wasm\build.ps1` for step 1; the other commands are the
+same. The result is `web/_site/`; serve it over HTTP, for example:
+
+```bash
+python3 -m http.server 8123 --directory web/_site
+```
+
+The GitHub Actions workflow
+[`.github/workflows/deploy-wasm.yml`](.github/workflows/deploy-wasm.yml)
+builds the same three pieces on pushes to `master` and publishes `web/_site/`
+to GitHub Pages.  See [`web/README.md`](web/README.md) and
+[`web/README-tw.md`](web/README-tw.md) for the site layout and deployment
+details.
+
+The deployed paths are:
+
+- landing page: `https://anomixer.github.io/freegemas/`
+- native WebAssembly: `https://anomixer.github.io/freegemas/wasm/`
+- Commander X16: `https://anomixer.github.io/freegemas/x16/`
+
+A2VERA and IIgs are external browser emulators, so they are linked directly and
+are not copied into `web/_site/`.
+
+## Commander X16 port
+
+The X16 port lives in [`x16/`](x16/).  It is 65C02 code built with the
+[LLVM-MOS SDK](https://github.com/llvm-mos/llvm-mos-sdk), with a resident loader
+and overlays, a 320×240 8bpp VERA bitmap, persistent hardware gem sprites and
+the original five signed 8-bit PCM effects.  Music is a **16-bit mono
+8,010.864 Hz ZCM** stream read from `hostfs/music.zcm` through KERNAL `MACPTR`,
+mixed with the effects into the 16-bit FIFO; music can be disabled from Options.
+High scores persist through HostFS.
+
+The browser player in [`x16/web/`](x16/web/) boots the same `hostfs/` build
+under the official x16emu WebAssembly r49.  Native validation and the browser
+player both use x16emu r49; neither is real-hardware validation.  See
+[`x16/README.md`](x16/README.md), [`x16/README-tw.md`](x16/README-tw.md) and
+[`x16/web/README.md`](x16/web/README.md).
+
+## A2VERA port (Apple //e + VERA)
+
+The VERA port lives in [`vera/`](vera/).  It uses LLVM-MOS 65C02 code, a
+320×240 8bpp bitmap with hardware gem sprites and a 2 MB ProDOS HDV.  It offers
+streamed 8-bit PCM music or the preloaded PSG arrangement, with five PCM sound
+effects in VERA VRAM; the segmented loader covers title, game, instructions and
+options.  See [`vera/README.md`](vera/README.md) and
+[`vera/AGENTS.md`](vera/AGENTS.md).
+
+Browser play uses Apple2TS and the HDV from this repository.  This is browser
+emulation, not a claim of new real-hardware testing in this change.
+
+## Apple IIgs port
+
+The IIgs port lives in [`iigs/`](iigs/).  It is a 320×200 Super Hi-Res game
+built with Merlin32, with VERA-inspired title, How-to-Play and Options screens,
+DOC music streamed through alternating 4 KiB wave tables, and separate DOC
+oscillator pairs for effects.  The deliverable is the bootable
+[`freegemas.2mg`](iigs/merlin32/build/freegemas.2mg) image; GS/OS and Ensoniq
+DOC audio are required.  See [`iigs/README.md`](iigs/README.md) and
+[`iigs/AGENTS.md`](iigs/AGENTS.md) for build steps and the current validation
+caveats.
+
+Browser play uses a2gsemu-ia.  This page does not imply that the IIgs port was
+newly tested on real hardware.
+
+## Native desktop builds
+
+The original desktop game is built from the repository root. SDL3, SDL3_mixer,
+SDL3_ttf and jsoncpp are built from the bundled submodules, so only the system
+development headers they need have to be installed. On Debian-based GNU/Linux
+systems:
+
+```bash
+sudo apt-get install git build-essential cmake \
+  zlib1g-dev libasound2-dev libxkbcommon-dev libdrm-dev libgl1-mesa-dev \
+  libgbm-dev libwayland-dev libdecor-0-dev
+
+git clone --recursive https://github.com/anomixer/freegemas.git
+cd freegemas
+mkdir build && cd build
+cmake ..
+cmake --build .
+./freegemas
+```
+
+On macOS, Homebrew is only needed for CMake:
+
+```bash
+brew install cmake
+```
+
+Then build and install the app bundle:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PWD/dist"
+cmake --build build
+strip build/freegemas.app/Contents/MacOS/freegemas
+cmake --install build
+open dist/freegemas.app
+```
 
 ### Building a universal app
 
 The executable has no third-party dylib dependencies. SDL3, SDL3_mixer,
 SDL3_ttf (including freetype) and JsonCpp are built as static archives from the
-submodules and linked into the binary, so ``Contents/MacOS/freegemas`` carries
-everything it needs and ``Contents/Frameworks`` stays empty. The only libraries
-it loads are Apple's own, from ``/usr/lib`` and ``/System/Library``.
+submodules and linked into the binary, so `Contents/MacOS/freegemas` carries
+everything it needs and `Contents/Frameworks` stays empty. The only libraries
+it loads are Apple's own, from `/usr/lib` and `/System/Library`.
 
 Build one bundle that runs on both Apple Silicon and Intel with:
 
-    cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
-        -DCMAKE_INSTALL_PREFIX="$PWD/dist"
-    cmake --build build -j"$(sysctl -n hw.ncpu)"
-    strip build/freegemas.app/Contents/MacOS/freegemas
-    cmake --install build
-    open dist/freegemas.app
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+    -DCMAKE_INSTALL_PREFIX="$PWD/dist"
+cmake --build build -j"$(sysctl -n hw.ncpu)"
+strip build/freegemas.app/Contents/MacOS/freegemas
+cmake --install build
+open dist/freegemas.app
+```
 
-The minimum macOS version is ``CMAKE_OSX_DEPLOYMENT_TARGET``, which defaults to
-``11.0``. It is baked into the binary (``minos``) and written to
-``LSMinimumSystemVersion`` in the bundle's ``Info.plist``, so Finder and
-Gatekeeper refuse to launch it on anything older. Override it the usual CMake
-way if you need a different floor:
+The original PlayStation Vita build is also retained:
 
-    cmake -S . -B build -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 ...
+```bash
+mkdir vita && cd vita
+cmake -DCMAKE_TOOLCHAIN_FILE="${VITASDK}/share/vita.toolchain.cmake" ..
+make
+```
 
-The floor is written to both the binary (``minos``) and ``Info.plist``, and the
-two always match. Two limits apply:
-
-- ``arm64`` cannot go below ``11.0``, because 11.0 is the first macOS release
-  that runs on Apple Silicon. A lower value therefore only applies to the
-  ``x86_64`` slice: ``-DCMAKE_OSX_DEPLOYMENT_TARGET=10.15`` produces a binary
-  that is ``10.15`` on ``x86_64`` and ``11.0`` on ``arm64``.
-- This does not mean the build is tested on that floor. Nothing in the current
-  setup runs the app on anything older than the machine that built it.
-
-To hand the bundle to someone else, zip the app together with the licences:
-
-    mkdir -p release/freegemas-macos-universal
-    cp -R dist/freegemas.app release/freegemas-macos-universal/
-    cp LICENSE THIRD-PARTY-LICENSES.md README.md release/freegemas-macos-universal/
-    (cd release && zip -qry freegemas-macos-universal.zip freegemas-macos-universal)
-
-Verify the result with:
-
-    codesign --verify --verbose dist/freegemas.app
-    lipo -info dist/freegemas.app/Contents/MacOS/freegemas
-    plutil -p dist/freegemas.app/Contents/Info.plist | grep LSMinimumSystemVersion
-
-There is no ``LC_RPATH`` and no non-system ``LC_LOAD_DYLIB`` in the executable,
-which is what makes the bundle relocatable. Confirm that with:
-
-    otool -L dist/freegemas.app/Contents/MacOS/freegemas \
-        | grep -vE "^\s*(/usr/lib/|/System/Library/)"
-
-That should print nothing beyond the executable header. To see what is actually
-loaded at run time, rather than what the load commands claim:
-
-    DYLD_PRINT_LIBRARIES=1 dist/freegemas.app/Contents/MacOS/freegemas 2>&1 \
-        | grep -vE "/(usr/lib|System)/"
-
-Nothing outside the bundle should appear.
-
-#### Signing
-
-**The install step ad-hoc signs the bundle, so it is not redistributable as
-built.** An ad-hoc signature (``Signature=adhoc``, no ``TeamIdentifier``) is
-accepted only on the machine that produced it; once the zip is downloaded
-elsewhere, Gatekeeper quarantines it and reports the app as damaged or
-unidentified. Copying it to another Mac will not work around this.
-
-Shipping to other people requires a Developer ID certificate and notarization:
-
-    codesign --force --options runtime --timestamp \
-        --sign "Developer ID Application: Your Name (TEAMID)" \
-        dist/freegemas.app
-    ditto -c -k --keepParent dist/freegemas.app FreeGemas.zip
-    xcrun notarytool submit FreeGemas.zip --wait \
-        --apple-id "you@example.com" --team-id TEAMID --password "app-specific-password"
-    xcrun stapler staple dist/freegemas.app
-
-Check available identities with ``security find-identity -v -p codesigning``;
-without one of those, only an ad-hoc build is possible.
-
-## Installation on Playstation Vita
-
-For building for Vita, the [Vita SDK](https://vitasdk.org) should be installed.
-
-After that, clone the repo:
-
-    git clone --recursive https://github.com/JoseTomasTocino/freegemas.git
-
-Do an out-of-source compilation:
-
-    cd freegemas
-    mkdir vita
-    cd vita
-    cmake -DCMAKE_TOOLCHAIN_FILE="${VITASDK}/share/vita.toolchain.cmake" ..
-    cmake --build .
-
-Now ``freegemas.vpk`` can be tranfered and installed on Vita.
-
-## Running in the browser (WebAssembly)
-
-The browser build requires [Emscripten](https://emscripten.org/) and CMake 3.28
-or newer. Clone the repository with its submodules, then activate Emscripten:
-
-    git clone --recursive https://github.com/JoseTomasTocino/freegemas.git
-    source /path/to/emsdk/emsdk_env.sh
-
-Build from the repository root with the helper script:
-
-    ./platform/wasm/build.sh
-
-On Windows:
-
-    .\platform\wasm\build.ps1
-
-The helper scripts also pick up `EMSDK` automatically when it is set. The output
-is written to `build-wasm/` and the entry point is `build-wasm/freegemas.html`.
-
-The build is a static site and can be hosted on GitHub Pages or any other web
-server. To test it locally, serve the output directory over HTTP:
-
-    python3 -m http.server 8000 --directory build-wasm
-
-Then open <http://localhost:8000/freegemas.html>. Opening the HTML file directly
-from disk does not work because browsers block the runtime's file fetches. Click
-**Play** once to enable browser audio.
-
-The browser shell has two small controls: **← Freegemas** in the top-left returns
-to the landing page (or the previous page when the build was opened from one),
-and **Fullscreen** in the top-right enters the browser's fullscreen mode. In
-fullscreen the game fills the whole display and the button changes to
-**Exit fullscreen**; press `Esc` to leave fullscreen.
-
-![Freegemas WebAssembly build](platform/wasm/screenshot.png)
+This produces `freegemas.vpk`, which can be transferred and installed on a Vita.
 
 ## Music licensing
 
-The music in the game is [Easy Lemon by Kevin MacLeod](https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1200076)
-Licensed under [Creative Commons: By Attribution 3.0](https://creativecommons.org/licenses/by/3.0/)
+The music in the game is [Easy Lemon by Kevin MacLeod](https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1200076),
+licensed under [Creative Commons: By Attribution 3.0](https://creativecommons.org/licenses/by/3.0/).
+
+## Validation scope
+
+The browser landing page, the local static build flow and the four player cards
+are website work.  The native WebAssembly and X16 WebAssembly players are built
+by GitHub Actions; their generated files are not committed.  A2VERA and IIgs
+run through their external browser emulators.  The port-specific READMEs record
+the emulator and real-hardware validation status separately; nothing in this
+page replaces testing on a physical Commander X16, Apple //e VERA or Apple IIgs.

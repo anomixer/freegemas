@@ -95,6 +95,12 @@ include_directories(
 if (VITA)
 	include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
 
+	target_link_libraries(freegemas PRIVATE
+		SceShaccCgExt
+		taihen_stub
+		SceShaccCg_stub
+	)
+
 	# Project start
 	set(VITA_APPNAME Freegemas)
 	set(VITA_TITLEID "FGEM00001")
