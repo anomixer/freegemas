@@ -332,7 +332,7 @@
   <header>
     <p class="eyebrow">Open-source match-three · four browser ports</p>
     <h1><img src="assets/freegemas-logo.png" alt="Freegemas" width="317" height="106"></h1>
-    <p class="lede">The original C++/SDL2 <strong>Freegemas</strong>, playable without installing anything.
+    <p class="lede">The original C++ <strong>Freegemas</strong>, now built on SDL3 and playable without installing anything.
       Choose the native WebAssembly build or take the gem board for a spin on a Commander X16,
       an Apple //e with VERA, or an Apple IIgs.</p>
   </header>
@@ -342,9 +342,9 @@
       <a class="card card-wasm" href="wasm/index.html">
         <span class="tag"><span class="dot"></span>Native WebAssembly</span>
         <h2>Play in your browser <span class="go" aria-hidden="true">→</span></h2>
-        <p>The native C++ game compiled with Emscripten: WebGL rendering, Web Audio, keyboard and mouse,
-          and no emulator in the middle.</p>
-        <span class="stack">src/ · SDL2 · Emscripten · WebGL · Web Audio</span>
+        <p>The native C++ game compiled with Emscripten on SDL3: WebGL rendering, Web Audio, keyboard and
+          mouse, and no emulator in the middle.</p>
+        <span class="stack">src/ · SDL3 · Emscripten · WebGL · Web Audio</span>
       </a>
 
       <a class="card card-x16" href="x16/index.html">
@@ -392,7 +392,7 @@
       · <a href="https://github.com/anomixer/freegemas/blob/master/LICENSE" target="_blank" rel="noopener">License</a>
       · <a href="https://github.com/JoseTomasTocino/freegemas" target="_blank" rel="noopener">Original Freegemas</a></p>
     <p class="fine">“Easy Lemon” by Kevin MacLeod, licensed under CC BY 3.0. Browser players are built from this repository;
-      the WebAssembly emulator is fetched at build time and is not vendored.</p>
+      the WebAssembly build is compiled with Emscripten and served from this page.</p>
   </footer>
 </div>
 </body>

@@ -3,7 +3,7 @@
 This directory builds the GitHub Pages landing page for Freegemas and the two
 players served from this repository:
 
-- **Native WebAssembly** — the original C++/SDL2 game compiled with Emscripten,
+- **Native WebAssembly** — the original C++/SDL3 game compiled with Emscripten,
   built from [`wasm/`](../wasm/).
 - **Commander X16** — the 65C02/VERA port booted by the official X16Community
   WebAssembly emulator r49, built from [`x16/web/`](../x16/web/).
