@@ -13,10 +13,12 @@
 在 repo 根目錄執行：
 
 ```powershell
-node vera\tools\build_assets.mjs
+node vera\tools\build_assets_all.mjs
 cmake -S vera\llvm -B vera\llvm\build
 cmake --build vera\llvm\build --target disk --parallel 4
 ```
+
+`build_assets_all.mjs` 一次執行圖形、游標、音效與 PCM 轉換器，重建進版控的 `vera/generated/` 輸入；重跑後不應留下 tracked diff。PSG 備援使用 `assets/music_pure_gained.psg`，這是經人耳校正後刻意保留的 master asset，不由 pipeline 重新產生。
 
 `build_assets.mjs` 從 repo 的 `media/` 產生 indexed bitmap、sprites、palette 與 RLE 場景。CMake 會建立 slot 2／slot 4 的遊戲 binary，`build_hdv.py` 再將它們和場景檔打包成 `vera/freegemas.hdv`。
 
@@ -54,7 +56,7 @@ PCM 音樂模式中，音樂與音效共用 VERA PCM FIFO 並以軟體混音。�
 
 PCM 模式從磁碟串流整首錄音：`MUSIC.PCM` 為 1012224 bytes（1977 個 ProDOS block、126.35 秒）。`tools/build_music_pcm.py` 以 ffmpeg 產生（linear-interp 重採樣到 8011 Hz、衰減到約 0.48 全刻度、40-sample fade）；原始音軌本身已接近全刻度，再加 6 dB 只會讓 limiter 削波。0.70 limiter 現在只是保險上限，不會被觸發。遊戲以 1KB ring buffer 從磁碟串流，FIFO 維持約 1024 bytes，每 VSYNC 補 133／134 samples；當 frame 超過 VSYNC、`waitvsync` 沒等到就返回時，只要 audio-low（ISR bit 3，FIFO < 1024）顯示佇列已低於目標深度，就持續補 128 samples 的追趕批次（`MUSIC_CATCHUP`），直到回到目標深度，以減少 FIFO 缺料，但超過緩衝餘裕的停頓仍可能造成斷音。長時間的 CPU 迴圈（無解掃描、棋盤生成）會呼叫 `frame_pump()`，在 VSYNC latch 已設時就地付掉音訊工作。實際送進 FIFO 的 sample 數同時被當成機器的實時參考：`music_frames_elapsed()` 把它換算成整數個 VSYNC tick（一 frame 133514 個千分位），Time Trial 倒數改加這些 ticks，所以兩分鐘的計時現在真的按實時前進，而不是每個迴圈只加一次（以前 1.6 frame 的連鎖動畫只跳 1.6 tick，音樂卻播了兩個 frame）。每次 loop 只做一次 SET_MARK，之後連續 MLI READ 最多 1KB；短讀取退回 512-byte 讀取。整首循環播放。
 
-PSG 模式沿用原本的 `music_pure_gained.psg` 編曲，進入遊戲時由 `MUSIC.PSG` 預載至輔助 RAM；播放 PSG 音樂與已預載 PCM 音效時不需讀取音樂或音效檔。啟動、R 重載場景、切換畫面與儲存高分仍可能存取磁碟。YM2151 probe 僅供顯示，目前不使用 FM 音樂。
+PSG 模式沿用經人耳校正的 `assets/music_pure_gained.psg` 編曲，進入遊戲時由 `MUSIC.PSG` 預載至輔助 RAM；播放 PSG 音樂與已預載 PCM 音效時不需讀取音樂或音效檔。啟動、R 重載場景、切換畫面與儲存高分仍可能存取磁碟。YM2151 probe 僅供顯示，目前不使用 FM 音樂。
 
 使用者已在 Apple2TS 試玩最終測試映像，確認 PCM 音效、PSG 播放與寶石下落正常；此版本尚未重新驗證 AppleWin 或實機。
 
@@ -70,8 +72,10 @@ Sound／Music 互不連動；音樂只在遊戲畫面播放，R 從頭重播，E
 - `llvm/tools/build_hdv.py`：建立 ProDOS HDV。
 - `assets/prodos-system/`：Cadius 建立 HDV volume 時加入的 ProDOS 與 CLOCK.SYSTEM 系統檔。
 - `llvm/tools/cadius.exe`：Windows 隨附的 Cadius；其他平台可使用自行安裝的版本。
+- `tools/build_assets_all.mjs`：一次重建所有進版控的 generated 輸入。
 - `tools/build_assets.mjs`：從原作素材產生 VERA assets。
-- `generated/`：重建 binary 所需的 palette、sprite、tile 和 RLE 輸入檔。
+- `assets/music_pure_gained.psg`：經人耳校正的 PSG 備援 master，不由 pipeline 產生。
+- `generated/`：重建 binary 所需的 palette、sprite、tile、游標和 RLE 輸入檔。
 - `AGENTS.md`：架構、記憶體配置、開發流程與容易踩到的問題。
 
 ## 目前範圍

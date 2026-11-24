@@ -1,7 +1,7 @@
-﻿"""Verify the shipped PSG stream on both slots, including disk-free playback."""
+"""Verify the shipped PSG stream on both slots, including disk-free playback."""
 from test_mos import Machine, VERA
 
-SOURCE = (VERA / 'generated/music_pure_gained.psg').read_bytes()
+SOURCE = (VERA / 'assets/music_pure_gained.psg').read_bytes()
 
 def call(m, name, arg=0):
     pc, sp = m.cpu.pc, m.cpu.sp

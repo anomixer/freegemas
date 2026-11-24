@@ -18,24 +18,23 @@ The bootable 2MG disk image is built at [`merlin32/build/freegemas.2mg`](merlin3
 - Python 3 with [Pillow](https://python-pillow.org/)
 - `ffmpeg` (for DOC audio conversion from original `media/*.ogg`)
 - Cadius 1.4.5 (bundled as `iigs/cadius.exe`)
-- GS/OS base template disk (bundled as `iigs/build/gsos-template.2mg`)
+- GS/OS base template disk (not included; put it at `iigs/build/gsos-template.2mg` or pass `TEMPLATE`)
 
 ### Build instructions
 
 From the repository root or `iigs/merlin32`:
 
 ```powershell
-# 1. Generate SHR scenes, palettes, and compiled gem blitters
-python iigs/tools/build_iigs_assets.py
+# 1. Generate SHR scenes, palettes, compiled gem blitters, DOC sounds, and the streamed music track
+python iigs/tools/build_assets_all.py
 
-# 2. Generate Ensoniq DOC PCM waves and streamed music track
-python iigs/tools/build_iigs_sounds.py iigs/merlin32/build
-
-# 3. Assemble and pack the 2MG bootable disk
+# 2. Assemble and pack the 2MG bootable disk
 cd iigs/merlin32
 ..\Merlin32.exe macros src/main.s
 make disk
 ```
+
+`build_assets_all.py` runs `build_iigs_assets.py` and `build_iigs_sounds.py` in order; a repeat run should leave the tracked inputs unchanged.
 
 `make disk` compiles `FREEGEM.S16`, stages assets, updates `/SYSTEM/SetStart.data` to auto-boot `FREEGEM.S16`, and creates the bootable `build/freegemas.2mg` image via Cadius.
 
@@ -85,6 +84,7 @@ make disk
 - `iigs/merlin32/src/main.s`: Main 65816 game engine, blitters, input, HUD, audio, and GS/OS interface.
 - `iigs/merlin32/macros/`: Merlin32 assembler macro definitions.
 - `iigs/merlin32/Makefile`: Assembly and disk packaging targets.
+- `iigs/tools/build_assets_all.py`: one-command regeneration of all tracked build inputs plus DOC sound staging.
 - `iigs/tools/build_iigs_assets.py`: SHR asset conversion script (scenes, palettes, blitters).
 - `iigs/tools/committed_art.py`: Board layout, palette assignment, and scene generator.
 - `iigs/tools/hud_art.py`: Left sidebar HUD and digit mask generators.

@@ -1,15 +1,15 @@
 # VERA PSG 音樂研究與目前取捨
 
-清理說明：**目前建置與遊戲只使用 `generated/music.pcm`（`MUSIC.PCM` 串流）和五個 `generated/*.pcm` 音效**；下面所有 PSG／FM／FGM／VZM 章節都是歷史研究記錄，對應的工具與產物（`build_music.py`、`build_music_vzm.py`、`midi_psg_arrange.py`、`wav2psg.py`、`test_music_vzm.py`、`test_music_conversion.py`、`test_midi_arrangement.py`、`generated/music*.psg`／`*.vzm`／`*.zsm`／`*.h`）已經從 repo 刪除，只剩文字記錄。原始 MIDI `vera/assets/music.mid` 仍保留，作為 `build_music_pcm.py` 的輸入。
+清理說明：**目前建置預設使用 `generated/music.pcm`（`MUSIC.PCM` 串流）和五個 `generated/*.pcm` 音效；PSG 備援使用 `assets/music_pure_gained.psg`。這個 PSG 是經人耳多次聽測與校正後保留的 master asset，刻意放在 `assets/`，不由自動 pipeline 產生。** 下面所有 PSG／FM／FGM／VZM 章節都是歷史研究記錄，對應的歷史工具與產物（`build_music.py`、`build_music_vzm.py`、`midi_psg_arrange.py`、`wav2psg.py`、`test_music_vzm.py`、`test_music_conversion.py`、`test_midi_arrangement.py`、`generated/music*.psg`／`*.vzm`／`*.zsm`／`*.h`）已經從 repo 刪除，只剩文字記錄；目前保留的 PSG 檔僅供遊戲備援與 regression test 使用。原始 MIDI `vera/assets/music.mid` 仍保留，作為 `build_music_pcm.py` 的輸入。
 
-## 目前狀態：整首串流 PCM（2026-10-29）
+## 目前預設：整首串流 PCM（2026-10-29）
 
 使用者聽過 FM 版後要求「全部改成 PCM，像 IIgs 那樣」，且不要管機器有沒有 YM2151。現在的實作：
 
 - `vera/tools/build_music_pcm.py` 讀 `media/music.ogg` → ffmpeg 解碼／`aresample=8011`／`volume=0.36`（衰減；來源本身已達 0.94 全刻度）／`alimiter=limit=0.70`（僅保險上限，正常不會觸發）／`-f s8`，輸出 `vera/generated/music.pcm`：signed 8-bit mono、1012224 bytes、1977 個 ProDOS block、約 126.35 秒，峰值 ±61、rms 9.1。40-sample fade 開頭避免起播爆音。
 - `vera/tools/build_sound.mjs` 用同一取樣率 8011 Hz、`volume=0.35,alimiter=limit=0.29`、`-f s8` 產生五個音效（select 1100、fall 1431、match1／2／3 各 2403 bytes，合計 9740 bytes），全部預載到 VRAM `$14800`。音樂上限 61 + 音效上限 37 = 98，所以在 `pcm_mix` 用 signed 相加不會溢位；網頁版 apple2ts 把 `(PSG + PCM)` 乘 2 後 clamp 到 ±1.0，0.96 也不會削波（AppleWin 只做相加，超過 127 才 clamp）。
 - 播放：`MUSIC_RATE 21` 對應 AppleWin 的 8010.86 Hz；每 VSYNC 從磁碟串流 133／134 bytes 進 1 KB ring，維持 FIFO 約 1024 bytes 深，音效和音樂共用同一條 FIFO。frame 超過 VSYNC 時 `waitvsync` 不等待就返回，單次補 133／134 會跟不上硬體連續消耗；`music_tick` 因此再讀 ISR bit 3（audio-low，FIFO < 1024），仍在目標深度之下就持續補 `MUSIC_CATCHUP` 128 samples 直到回滿，避免佇列滑到 0 而斷音；長 CPU 迴圈另以 `frame_pump()` 就地付掉音訊工作。送進 FIFO 的 sample 數同時作為實時時鐘（`music_frames_elapsed()`，一 frame 133514 個千分位），Time Trial 以它計時。
-- 沒有 Aux RAM、沒有 PSG、沒有 FM 播放路徑；`fm_detect()` 只在 Intro 顯示 `FM: YM2151 DETECTED (OPM)`／`FM: NONE`，與播放無關。
+- 預設 PCM 路徑沒有 Aux RAM、沒有 PSG、沒有 FM 播放；PSG 備援仍使用保留的 `assets/music_pure_gained.psg`，不是這條串流路徑的一部分。`fm_detect()` 只在 Intro 顯示 `FM: YM2151 DETECTED (OPM)`／`FM: NONE`，與播放無關。
 - 驗證：`test_music.py`（整份 1012224 bytes、磁碟讀取、OFF／ON、混音、R 重播、Esc 靜音）、`test_sound.py`（五個檔案在 `$14800` 起 byte-exact）、`test_pcm_clock.py`（CPU cycle 推進 FIFO，無 PSG 寫入）、`test_loading_progress.py`（186 blocks），兩 slot 全綠。這些是 65C02／VERA model 比對，本環境 AppleWin 的 `-fm-wav-dump` 只產生全零樣本，**沒有** AppleWin 或實機聽感驗證。
 
 ## 歷史：已移除的 YM2151 FM 版 `MUSIC.VZM`（2026-10-28）

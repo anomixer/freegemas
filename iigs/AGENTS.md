@@ -17,6 +17,7 @@
 
 - `iigs/merlin32/src/main.s`：啟動、SHR/blitter、輸入、遊戲規則、HUD、Toolbox/GS/OS 呼叫與音訊。
 - `iigs/merlin32/macros/`：Merlin32 `USE` 巨集；`iigs/merlin32/Makefile`：組譯及 disk target。
+- `iigs/tools/build_assets_all.py`：一次重建所有進版控的建置輸入與 DOC 音效。
 - `iigs/tools/build_iigs_assets.py`、`shr_art.py`、`committed_art.py`、`hud_art.py`：由來源圖產生 SHR 場景、寶石與側欄。
 - `iigs/tools/build_iigs_sounds.py`：由 `media/` 音檔產生 IIGS PCM。
 - `iigs/tools/pack_disk.py`、`pack_cadius.py`、`make_startup.py`：建立開機映像與 `/SYSTEM/SetStart.data`。
@@ -25,7 +26,7 @@
 
 ## 建置與磁碟映像
 
-在 `iigs/merlin32` 執行：
+在 `iigs/merlin32` 執行前，先於 repo 根目錄以 `python iigs/tools/build_assets_all.py` 重建資產；接著在 `iigs/merlin32` 執行：
 
 ```powershell
 C:\dev\Merlin32.exe macros src/main.s

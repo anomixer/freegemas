@@ -18,24 +18,23 @@
 - Python 3 與 [Pillow](https://python-pillow.org/)
 - `ffmpeg`（用於將原版 `media/*.ogg` 轉換為 DOC PCM 格式）
 - Cadius 1.4.5（隨附於 `iigs/cadius.exe`）
-- GS/OS 基礎映像範本（隨附於 `iigs/build/gsos-template.2mg`）
+- GS/OS 基礎映像範本（未隨附；放在 `iigs/build/gsos-template.2mg`，或以 `TEMPLATE` 指定）
 
 ### 建置指令
 
 於 repo 根目錄或 `iigs/merlin32` 執行：
 
 ```powershell
-# 1. 產生 SHR 場景、調色盤及編譯式寶石 Blitter
-python iigs/tools/build_iigs_assets.py
+# 1. 產生 SHR 場景、調色盤、編譯式寶石 Blitter、DOC 音效與 BGM 音軌
+python iigs/tools/build_assets_all.py
 
-# 2. 產生 Ensoniq DOC PCM 音效與 BGM 音軌
-python iigs/tools/build_iigs_sounds.py iigs/merlin32/build
-
-# 3. 組譯程式碼並打包為 2MG 開機磁碟
+# 2. 組譯程式碼並打包為 2MG 開機磁碟
 cd iigs/merlin32
 ..\Merlin32.exe macros src/main.s
 make disk
 ```
+
+`build_assets_all.py` 會依序執行 `build_iigs_assets.py` 與 `build_iigs_sounds.py`；重跑後不應留下 tracked diff。
 
 `make disk` 會編譯 `FREEGEM.S16`、整理各類遊戲資產、更新 `/SYSTEM/SetStart.data`（使磁碟開機直接啟動 `FREEGEM.S16`），並透過 Cadius 產出可開機的 `build/freegemas.2mg` 磁碟。
 
@@ -85,6 +84,7 @@ make disk
 - `iigs/merlin32/src/main.s`：核心 65816 遊戲引擎、Blitter、輸入、HUD、音訊與 GS/OS 介面。
 - `iigs/merlin32/macros/`：Merlin32 組譯巨集。
 - `iigs/merlin32/Makefile`：組譯與磁碟建置 Makefile。
+- `iigs/tools/build_assets_all.py`：一次重建所有進版控的建置輸入與 DOC 音效。
 - `iigs/tools/build_iigs_assets.py`：SHR 資產轉換工具（場景、調色盤、Blitter）。
 - `iigs/tools/committed_art.py`：棋盤佈局、調色盤分配與場景生成器。
 - `iigs/tools/hud_art.py`：左側 HUD 儀表板與數字遮罩生成器。
